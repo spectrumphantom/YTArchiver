@@ -5,6 +5,7 @@
  * YouTube Playlist Downloader API
  * OpenAPI spec version: 0.1.0
  */
+import type { GetSongsSort } from './getSongsSort';
 
 export type GetSongsParams = {
 /**
@@ -16,4 +17,8 @@ page?: number;
  * @maximum 200
  */
 pageSize?: number;
+/**
+ * Sort order for songs
+ */
+sort?: GetSongsSort;
 };

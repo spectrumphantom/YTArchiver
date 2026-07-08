@@ -72,8 +72,18 @@ export interface SongStats {
   error: number;
 }
 
+export type DownloadJobStatusState = typeof DownloadJobStatusState[keyof typeof DownloadJobStatusState];
+
+
+export const DownloadJobStatusState = {
+  idle: 'idle',
+  running: 'running',
+  paused: 'paused',
+} as const;
+
 export interface DownloadJobStatus {
   running: boolean;
+  state: DownloadJobStatusState;
   /** @nullable */
   currentSong?: string | null;
   pending: number;
@@ -95,5 +105,18 @@ page?: number;
  * @maximum 200
  */
 pageSize?: number;
+/**
+ * Sort order for songs
+ */
+sort?: GetSongsSort;
 };
+
+export type GetSongsSort = typeof GetSongsSort[keyof typeof GetSongsSort];
+
+
+export const GetSongsSort = {
+  added: 'added',
+  title: 'title',
+  channel: 'channel',
+} as const;
 

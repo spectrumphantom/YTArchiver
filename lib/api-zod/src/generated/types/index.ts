@@ -7,8 +7,10 @@
  */
 
 export * from './downloadJobStatus';
+export * from './downloadJobStatusState';
 export * from './errorResponse';
 export * from './getSongsParams';
+export * from './getSongsSort';
 export * from './healthStatus';
 export * from './playlistScrapeInput';
 export * from './scrapeResult';

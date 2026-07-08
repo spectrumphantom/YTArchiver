@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Play, Download, Square, CheckCircle, Clock, AlertCircle, Loader2, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
+import { Play, Download, Square, Pause, CheckCircle, Clock, AlertCircle, Loader2, RefreshCw, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 import {
   useScrapePlaylist,
   useGetSongs,
@@ -11,6 +11,8 @@ import {
   useGetDownloadStatus,
   getGetDownloadStatusQueryKey,
   useStopDownloads,
+  usePauseDownloads,
+  type GetSongsSort,
 } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
@@ -26,6 +28,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // Utility to format duration in seconds to mm:ss
 function formatDuration(seconds: number) {
@@ -39,6 +48,7 @@ const PAGE_SIZE = 50;
 export default function Home() {
   const [url, setUrl] = useState("");
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState<GetSongsSort>("added");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -53,10 +63,10 @@ export default function Home() {
 
   // Queries
   const { data: songPage, isLoading: isLoadingSongs } = useGetSongs(
-    { page, pageSize: PAGE_SIZE },
+    { page, pageSize: PAGE_SIZE, sort },
     {
       query: {
-        queryKey: getGetSongsQueryKey({ page, pageSize: PAGE_SIZE }),
+        queryKey: getGetSongsQueryKey({ page, pageSize: PAGE_SIZE, sort }),
         refetchInterval: jobRunning ? 3000 : false,
         placeholderData: (prev) => prev,
       },
@@ -109,10 +119,19 @@ export default function Home() {
   const stopDownloads = useStopDownloads({
     mutation: {
       onSuccess: () => {
-        toast({ title: "Downloads Stopped", description: "Halted remaining downloads." });
+        toast({ title: "Downloads Stopped", description: "Aborted current download and halted the queue." });
         queryClient.invalidateQueries({ queryKey: getGetDownloadStatusQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetSongStatsQueryKey() });
         queryClient.invalidateQueries({ queryKey: ["/api/songs"] });
+      },
+    },
+  });
+
+  const pauseDownloads = usePauseDownloads({
+    mutation: {
+      onSuccess: () => {
+        toast({ title: "Pausing Downloads", description: "Will pause after the current song finishes." });
+        queryClient.invalidateQueries({ queryKey: getGetDownloadStatusQueryKey() });
       },
     },
   });
@@ -126,8 +145,14 @@ export default function Home() {
 
   const handleStart = () => startDownloads.mutate();
   const handleStop = () => stopDownloads.mutate();
+  const handlePause = () => pauseDownloads.mutate();
+  const handleSortChange = (value: string) => {
+    setSort(value as GetSongsSort);
+    setPage(1);
+  };
 
   const isDownloading = downloadStatus?.running || false;
+  const jobState = downloadStatus?.state ?? "idle";
 
   // Render Status Badge
   const getStatusBadge = (status: string) => {
@@ -243,21 +268,38 @@ export default function Home() {
               className="w-full font-mono bg-primary text-primary-foreground hover:bg-primary/90"
               data-testid="button-start-dl"
             >
-              <Play className="w-4 h-4 mr-2" /> START DL
+              <Play className="w-4 h-4 mr-2" />
+              {jobState === "paused" ? "RESUME DL" : "START DL"}
             </Button>
           ) : (
-            <Button
-              onClick={handleStop}
-              variant="destructive"
-              className="w-full font-mono"
-              data-testid="button-stop-dl"
-            >
-              <Square className="w-4 h-4 mr-2" /> STOP DL
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                onClick={handlePause}
+                disabled={pauseDownloads.isPending}
+                variant="outline"
+                className="flex-1 font-mono"
+                data-testid="button-pause-dl"
+              >
+                <Pause className="w-4 h-4 mr-2" /> PAUSE
+              </Button>
+              <Button
+                onClick={handleStop}
+                variant="destructive"
+                className="flex-1 font-mono"
+                data-testid="button-stop-dl"
+              >
+                <Square className="w-4 h-4 mr-2" /> STOP
+              </Button>
+            </div>
           )}
           {isDownloading && (
             <div className="text-[10px] font-mono text-blue-400 mt-2 truncate animate-pulse">
               &gt; {downloadStatus?.currentSong ? "DOWNLOADING..." : "WAITING..."}
+            </div>
+          )}
+          {!isDownloading && jobState === "paused" && (
+            <div className="text-[10px] font-mono text-yellow-400 mt-2 truncate">
+              &gt; PAUSED
             </div>
           )}
         </Card>
@@ -265,6 +307,22 @@ export default function Home() {
 
       {/* Data Table */}
       <div className="border border-border bg-card">
+        <div className="flex items-center justify-between border-b border-border px-4 py-2">
+          <span className="text-xs font-mono text-muted-foreground">MANIFEST</span>
+          <div className="flex items-center gap-2">
+            <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
+            <Select value={sort} onValueChange={handleSortChange}>
+              <SelectTrigger className="h-8 w-[180px] font-mono text-xs" data-testid="select-sort">
+                <SelectValue placeholder="SORT BY" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="added" className="font-mono text-xs">DATE ADDED</SelectItem>
+                <SelectItem value="title" className="font-mono text-xs">TITLE (A-Z)</SelectItem>
+                <SelectItem value="channel" className="font-mono text-xs">CHANNEL (A-Z)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         <Table>
           <TableHeader>
             <TableRow className="border-border hover:bg-transparent">

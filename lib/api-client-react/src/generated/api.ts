@@ -520,6 +520,77 @@ export function useGetDownloadStatus<TData = Awaited<ReturnType<typeof getDownlo
 
 
 
+export const getPauseDownloadsUrl = () => {
+
+
+
+
+  return `/api/downloads/pause`
+}
+
+/**
+ * @summary Pause downloads after the current song finishes
+ */
+export const pauseDownloads = async ( options?: RequestInit): Promise<DownloadJobStatus> => {
+
+  return customFetch<DownloadJobStatus>(getPauseDownloadsUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getPauseDownloadsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pauseDownloads>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pauseDownloads>>, TError,void, TContext> => {
+
+const mutationKey = ['pauseDownloads'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pauseDownloads>>, void> = () => {
+
+
+          return  pauseDownloads(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PauseDownloadsMutationResult = NonNullable<Awaited<ReturnType<typeof pauseDownloads>>>
+
+    export type PauseDownloadsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Pause downloads after the current song finishes
+ */
+export const usePauseDownloads = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pauseDownloads>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pauseDownloads>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getPauseDownloadsMutationOptions(options));
+    }
+
 export const getStopDownloadsUrl = () => {
 
 
@@ -529,7 +600,7 @@ export const getStopDownloadsUrl = () => {
 }
 
 /**
- * @summary Stop any in-progress downloads
+ * @summary Stop downloads immediately, aborting the current song
  */
 export const stopDownloads = async ( options?: RequestInit): Promise<DownloadJobStatus> => {
 
@@ -578,7 +649,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type StopDownloadsMutationError = ErrorType<unknown>
 
     /**
- * @summary Stop any in-progress downloads
+ * @summary Stop downloads immediately, aborting the current song
  */
 export const useStopDownloads = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof stopDownloads>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}

@@ -1,5 +1,10 @@
 import { Router } from "express";
-import { startDownloadJob, getJobStatus, requestStop } from "../lib/downloader";
+import {
+  startDownloadJob,
+  getJobStatus,
+  requestStop,
+  requestPause,
+} from "../lib/downloader";
 
 const router = Router();
 
@@ -14,6 +19,11 @@ router.post("/downloads/start", async (req, res) => {
 });
 
 router.get("/downloads/status", (_req, res) => {
+  res.json(getJobStatus());
+});
+
+router.post("/downloads/pause", (_req, res) => {
+  requestPause();
   res.json(getJobStatus());
 });
 

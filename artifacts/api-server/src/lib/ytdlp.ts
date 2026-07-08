@@ -73,12 +73,14 @@ export interface YtDlpResult {
 
 export async function runYtDlp(
   args: string[],
-  timeoutMs = 30 * 60 * 1000
+  timeoutMs = 30 * 60 * 1000,
+  signal?: AbortSignal
 ): Promise<YtDlpResult> {
   const binary = await ensureYtDlp();
   return new Promise((resolve, reject) => {
     const proc = spawn(binary, args, {
       env: { ...process.env, PATH: process.env.PATH ?? "" },
+      signal,
     });
 
     let stdout = "";

@@ -11,10 +11,34 @@ router.get("/songs", async (req, res) => {
       Math.max(1, parseInt(String(req.query.pageSize ?? "50"), 10) || 50)
     );
 
+    const sortParam = String(req.query.sort ?? "added");
+    const sort = ["added", "title", "channel"].includes(sortParam)
+      ? (sortParam as "added" | "title" | "channel")
+      : "added";
+
     const manifest = await readManifest();
-    const all = Object.values(manifest.songs).sort(
-      (a, b) => new Date(a.addedAt).getTime() - new Date(b.addedAt).getTime()
-    );
+    const all = Object.values(manifest.songs).sort((a, b) => {
+      switch (sort) {
+        case "title":
+          return a.title.localeCompare(b.title, undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+        case "channel":
+          return (
+            a.channel.localeCompare(b.channel, undefined, {
+              numeric: true,
+              sensitivity: "base",
+            }) ||
+            a.title.localeCompare(b.title, undefined, {
+              numeric: true,
+              sensitivity: "base",
+            })
+          );
+        default:
+          return new Date(a.addedAt).getTime() - new Date(b.addedAt).getTime();
+      }
+    });
 
     const total = all.length;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));

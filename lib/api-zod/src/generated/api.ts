@@ -53,11 +53,12 @@ export const getSongsQueryPageDefault = 1;
 export const getSongsQueryPageSizeDefault = 50;
 export const getSongsQueryPageSizeMax = 200;
 
-
+export const getSongsQuerySortDefault = `added`;
 
 export const GetSongsQueryParams = zod.object({
   "page": zod.coerce.number().min(1).default(getSongsQueryPageDefault),
-  "pageSize": zod.coerce.number().min(1).max(getSongsQueryPageSizeMax).default(getSongsQueryPageSizeDefault)
+  "pageSize": zod.coerce.number().min(1).max(getSongsQueryPageSizeMax).default(getSongsQueryPageSizeDefault),
+  "sort": zod.enum(['added', 'title', 'channel']).default(getSongsQuerySortDefault).describe('Sort order for songs')
 })
 
 export const GetSongsResponse = zod.object({
@@ -98,6 +99,7 @@ export const GetSongStatsResponse = zod.object({
  */
 export const StartDownloadsResponse = zod.object({
   "running": zod.boolean(),
+  "state": zod.enum(['idle', 'running', 'paused']),
   "currentSong": zod.string().nullish(),
   "pending": zod.number(),
   "completed": zod.number(),
@@ -111,6 +113,7 @@ export const StartDownloadsResponse = zod.object({
  */
 export const GetDownloadStatusResponse = zod.object({
   "running": zod.boolean(),
+  "state": zod.enum(['idle', 'running', 'paused']),
   "currentSong": zod.string().nullish(),
   "pending": zod.number(),
   "completed": zod.number(),
@@ -119,10 +122,24 @@ export const GetDownloadStatusResponse = zod.object({
 
 
 /**
- * @summary Stop any in-progress downloads
+ * @summary Pause downloads after the current song finishes
+ */
+export const PauseDownloadsResponse = zod.object({
+  "running": zod.boolean(),
+  "state": zod.enum(['idle', 'running', 'paused']),
+  "currentSong": zod.string().nullish(),
+  "pending": zod.number(),
+  "completed": zod.number(),
+  "failed": zod.number()
+})
+
+
+/**
+ * @summary Stop downloads immediately, aborting the current song
  */
 export const StopDownloadsResponse = zod.object({
   "running": zod.boolean(),
+  "state": zod.enum(['idle', 'running', 'paused']),
   "currentSong": zod.string().nullish(),
   "pending": zod.number(),
   "completed": zod.number(),

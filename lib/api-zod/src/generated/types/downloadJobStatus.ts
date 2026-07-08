@@ -5,9 +5,11 @@
  * YouTube Playlist Downloader API
  * OpenAPI spec version: 0.1.0
  */
+import type { DownloadJobStatusState } from './downloadJobStatusState';
 
 export interface DownloadJobStatus {
   running: boolean;
+  state: DownloadJobStatusState;
   /** @nullable */
   currentSong?: string | null;
   pending: number;

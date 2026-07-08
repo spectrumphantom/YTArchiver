@@ -8,8 +8,11 @@ import { logger } from "./logger";
 
 const AUDIO_PREFIX = "playlist-downloader/audio";
 
+export type JobState = "idle" | "running" | "paused";
+
 export interface DownloadJobStatus {
   running: boolean;
+  state: JobState;
   currentSong: string | null;
   pending: number;
   completed: number;
@@ -18,6 +21,7 @@ export interface DownloadJobStatus {
 
 let jobStatus: DownloadJobStatus = {
   running: false,
+  state: "idle",
   currentSong: null,
   pending: 0,
   completed: 0,
@@ -25,13 +29,22 @@ let jobStatus: DownloadJobStatus = {
 };
 
 let stopRequested = false;
+let pauseRequested = false;
+let currentAbort: AbortController | null = null;
 
 export function getJobStatus(): DownloadJobStatus {
   return { ...jobStatus };
 }
 
 export function requestStop(): void {
+  if (!jobStatus.running) return;
   stopRequested = true;
+  currentAbort?.abort();
+}
+
+export function requestPause(): void {
+  if (!jobStatus.running) return;
+  pauseRequested = true;
 }
 
 function getBucketId(): string {
@@ -122,7 +135,11 @@ export async function scrapePlaylist(url: string): Promise<{
   };
 }
 
-async function downloadSingleSong(song: Song): Promise<void> {
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === "AbortError";
+}
+
+async function downloadSingleSong(song: Song, signal?: AbortSignal): Promise<void> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "yt-"));
   try {
     await updateSong(song.id, { status: "downloading" });
@@ -139,7 +156,8 @@ async function downloadSingleSong(song: Song): Promise<void> {
         "--max-sleep-interval", "3",
         `https://www.youtube.com/watch?v=${song.id}`,
       ],
-      15 * 60 * 1000
+      15 * 60 * 1000,
+      signal
     );
 
     const files = await fs.readdir(tmpDir);
@@ -169,8 +187,13 @@ async function downloadSingleSong(song: Song): Promise<void> {
     });
     logger.info({ id: song.id, title: song.title }, "Song downloaded");
   } catch (err) {
-    logger.error({ err, id: song.id }, "Failed to download song");
-    await updateSong(song.id, { status: "error" });
+    if (isAbortError(err)) {
+      logger.info({ id: song.id }, "Download aborted, resetting to pending");
+      await updateSong(song.id, { status: "pending" });
+    } else {
+      logger.error({ err, id: song.id }, "Failed to download song");
+      await updateSong(song.id, { status: "error" });
+    }
     throw err;
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
@@ -181,8 +204,10 @@ export async function startDownloadJob(): Promise<void> {
   if (jobStatus.running) return;
 
   stopRequested = false;
+  pauseRequested = false;
   jobStatus = {
     running: true,
+    state: "running",
     currentSong: null,
     pending: 0,
     completed: 0,
@@ -199,13 +224,16 @@ export async function startDownloadJob(): Promise<void> {
       jobStatus.pending = pending.length;
 
       for (const song of pending) {
-        if (stopRequested) break;
+        if (stopRequested || pauseRequested) break;
         jobStatus.currentSong = song.title;
+        currentAbort = new AbortController();
         try {
-          await downloadSingleSong(song);
+          await downloadSingleSong(song, currentAbort.signal);
           jobStatus.completed++;
-        } catch {
-          jobStatus.failed++;
+        } catch (err) {
+          if (!isAbortError(err)) jobStatus.failed++;
+        } finally {
+          currentAbort = null;
         }
         jobStatus.pending = Math.max(0, jobStatus.pending - 1);
       }
@@ -213,7 +241,9 @@ export async function startDownloadJob(): Promise<void> {
       logger.error({ err }, "Download job failed");
     } finally {
       jobStatus.running = false;
+      jobStatus.state = pauseRequested && !stopRequested ? "paused" : "idle";
       jobStatus.currentSong = null;
+      currentAbort = null;
     }
   })();
 }

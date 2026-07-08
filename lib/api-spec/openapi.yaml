@@ -84,6 +84,14 @@ paths:
             minimum: 1
             maximum: 200
             default: 50
+        - name: sort
+          in: query
+          required: false
+          description: Sort order for songs
+          schema:
+            type: string
+            enum: [added, title, channel]
+            default: added
       responses:
         "200":
           description: Paginated list of songs
@@ -134,11 +142,24 @@ paths:
               schema:
                 $ref: "#/components/schemas/DownloadJobStatus"
 
+  /downloads/pause:
+    post:
+      operationId: pauseDownloads
+      tags: [downloads]
+      summary: Pause downloads after the current song finishes
+      responses:
+        "200":
+          description: Downloads pausing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DownloadJobStatus"
+
   /downloads/stop:
     post:
       operationId: stopDownloads
       tags: [downloads]
-      summary: Stop any in-progress downloads
+      summary: Stop downloads immediately, aborting the current song
       responses:
         "200":
           description: Downloads stopped
@@ -269,12 +290,16 @@ components:
       type: object
       required:
         - running
+        - state
         - pending
         - completed
         - failed
       properties:
         running:
           type: boolean
+        state:
+          type: string
+          enum: [idle, running, paused]
         currentSong:
           type: ["string", "null"]
         pending:
