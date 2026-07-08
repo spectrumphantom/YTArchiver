@@ -1,15 +1,20 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: YouTube Playlist Downloader API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: playlist
+    description: Playlist scraping operations
+  - name: songs
+    description: Song management operations
+  - name: downloads
+    description: Download operations
 paths:
   /healthz:
     get:
@@ -24,6 +29,110 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /playlist/scrape:
+    post:
+      operationId: scrapePlaylist
+      tags: [playlist]
+      summary: Scrape all songs from a YouTube playlist
+      description: Uses yt-dlp to extract all song metadata from a playlist URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaylistScrapeInput"
+      responses:
+        "200":
+          description: Playlist scraped and songs saved to manifest
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrapeResult"
+        "400":
+          description: Invalid playlist URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Scraping failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /songs:
+    get:
+      operationId: getSongs
+      tags: [songs]
+      summary: List all songs in the manifest
+      description: Returns all songs tracked in the bucket manifest
+      responses:
+        "200":
+          description: List of songs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Song"
+
+  /songs/stats:
+    get:
+      operationId: getSongStats
+      tags: [songs]
+      summary: Get download stats
+      description: Returns counts of total, downloaded, and pending songs
+      responses:
+        "200":
+          description: Song statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SongStats"
+
+  /downloads/start:
+    post:
+      operationId: startDownloads
+      tags: [downloads]
+      summary: Start downloading all pending songs
+      description: Triggers background download of all songs not yet in the bucket
+      responses:
+        "200":
+          description: Download job started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DownloadJobStatus"
+
+  /downloads/status:
+    get:
+      operationId: getDownloadStatus
+      tags: [downloads]
+      summary: Get current download job status
+      description: Returns whether a download is in progress and how many remain
+      responses:
+        "200":
+          description: Current download status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DownloadJobStatus"
+
+  /downloads/stop:
+    post:
+      operationId: stopDownloads
+      tags: [downloads]
+      summary: Stop any in-progress downloads
+      responses:
+        "200":
+          description: Downloads stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DownloadJobStatus"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +143,115 @@ components:
       required:
         - status
 
+    PlaylistScrapeInput:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          description: YouTube playlist URL
+
+    Song:
+      type: object
+      required:
+        - id
+        - title
+        - channel
+        - duration
+        - status
+        - addedAt
+      properties:
+        id:
+          type: string
+          description: YouTube video ID
+        title:
+          type: string
+        channel:
+          type: string
+        duration:
+          type: integer
+          description: Duration in seconds
+        thumbnailUrl:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [pending, downloading, done, error]
+        bucketPath:
+          type: ["string", "null"]
+          description: Path in bucket if downloaded
+        addedAt:
+          type: string
+          description: ISO timestamp when song was added
+        downloadedAt:
+          type: ["string", "null"]
+          description: ISO timestamp when download completed
+
+    ScrapeResult:
+      type: object
+      required:
+        - totalFound
+        - newAdded
+        - alreadyExists
+        - playlistTitle
+        - songs
+      properties:
+        totalFound:
+          type: integer
+        newAdded:
+          type: integer
+        alreadyExists:
+          type: integer
+        playlistTitle:
+          type: string
+        songs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Song"
+
+    SongStats:
+      type: object
+      required:
+        - total
+        - downloaded
+        - pending
+        - downloading
+        - error
+      properties:
+        total:
+          type: integer
+        downloaded:
+          type: integer
+        pending:
+          type: integer
+        downloading:
+          type: integer
+        error:
+          type: integer
+
+    DownloadJobStatus:
+      type: object
+      required:
+        - running
+        - pending
+        - completed
+        - failed
+      properties:
+        running:
+          type: boolean
+        currentSong:
+          type: ["string", "null"]
+        pending:
+          type: integer
+        completed:
+          type: integer
+        failed:
+          type: integer
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
