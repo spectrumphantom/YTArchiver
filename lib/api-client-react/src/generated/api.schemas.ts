@@ -48,6 +48,14 @@ export interface Song {
   downloadedAt?: string | null;
 }
 
+export interface SongPage {
+  songs: Song[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export interface ScrapeResult {
   totalFound: number;
   newAdded: number;
@@ -76,4 +84,16 @@ export interface DownloadJobStatus {
 export interface ErrorResponse {
   error: string;
 }
+
+export type GetSongsParams = {
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 200
+ */
+pageSize?: number;
+};
 

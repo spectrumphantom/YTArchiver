@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Play, Download, Square, CheckCircle, Clock, AlertCircle, Loader2, RefreshCw } from "lucide-react";
+import { Play, Download, Square, CheckCircle, Clock, AlertCircle, Loader2, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   useScrapePlaylist,
   useGetSongs,
@@ -34,24 +34,43 @@ function formatDuration(seconds: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+const PAGE_SIZE = 50;
+
 export default function Home() {
   const [url, setUrl] = useState("");
+  const [page, setPage] = useState(1);
   const { toast } = useToast();
   const queryClient = useQueryClient();
-
-  // Queries
-  const { data: songs, isLoading: isLoadingSongs } = useGetSongs({
-    query: { queryKey: getGetSongsQueryKey() },
-  });
-
-  const { data: stats } = useGetSongStats({
-    query: { queryKey: getGetSongStatsQueryKey() },
-  });
 
   const { data: downloadStatus } = useGetDownloadStatus({
     query: {
       queryKey: getGetDownloadStatusQueryKey(),
       refetchInterval: (q) => (q.state.data?.running ? 2000 : false),
+    },
+  });
+
+  const jobRunning = downloadStatus?.running || false;
+
+  // Queries
+  const { data: songPage, isLoading: isLoadingSongs } = useGetSongs(
+    { page, pageSize: PAGE_SIZE },
+    {
+      query: {
+        queryKey: getGetSongsQueryKey({ page, pageSize: PAGE_SIZE }),
+        refetchInterval: jobRunning ? 3000 : false,
+        placeholderData: (prev) => prev,
+      },
+    }
+  );
+
+  const songs = songPage?.songs;
+  const totalPages = songPage?.totalPages ?? 1;
+  const totalSongsCount = songPage?.total ?? 0;
+
+  const { data: stats } = useGetSongStats({
+    query: {
+      queryKey: getGetSongStatsQueryKey(),
+      refetchInterval: jobRunning ? 3000 : false,
     },
   });
 
@@ -64,13 +83,14 @@ export default function Home() {
           description: `Found ${data.totalFound} songs. Added ${data.newAdded} new.`,
         });
         setUrl("");
-        queryClient.invalidateQueries({ queryKey: getGetSongsQueryKey() });
+        setPage(1);
+        queryClient.invalidateQueries({ queryKey: ["/api/songs"] });
         queryClient.invalidateQueries({ queryKey: getGetSongStatsQueryKey() });
       },
       onError: (err) => {
         toast({
           title: "Scrape Failed",
-          description: err.error?.error || "Unknown error occurred",
+          description: err.data?.error || err.message || "Unknown error occurred",
           variant: "destructive",
         });
       },
@@ -92,7 +112,7 @@ export default function Home() {
         toast({ title: "Downloads Stopped", description: "Halted remaining downloads." });
         queryClient.invalidateQueries({ queryKey: getGetDownloadStatusQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetSongStatsQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetSongsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["/api/songs"] });
       },
     },
   });
@@ -300,6 +320,36 @@ export default function Home() {
             )}
           </TableBody>
         </Table>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between border-t border-border px-4 py-3">
+            <span className="text-xs font-mono text-muted-foreground" data-testid="text-page-info">
+              PAGE {page}/{totalPages} // {totalSongsCount} SONGS
+            </span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="font-mono"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                data-testid="button-prev-page"
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" /> PREV
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="font-mono"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                data-testid="button-next-page"
+              >
+                NEXT <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

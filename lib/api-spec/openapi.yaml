@@ -66,17 +66,31 @@ paths:
     get:
       operationId: getSongs
       tags: [songs]
-      summary: List all songs in the manifest
-      description: Returns all songs tracked in the bucket manifest
+      summary: List songs in the manifest (paginated)
+      description: Returns a page of songs tracked in the bucket manifest
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
       responses:
         "200":
-          description: List of songs
+          description: Paginated list of songs
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Song"
+                $ref: "#/components/schemas/SongPage"
 
   /songs/stats:
     get:
@@ -186,6 +200,28 @@ components:
         downloadedAt:
           type: ["string", "null"]
           description: ISO timestamp when download completed
+
+    SongPage:
+      type: object
+      required:
+        - songs
+        - total
+        - page
+        - pageSize
+        - totalPages
+      properties:
+        songs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Song"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalPages:
+          type: integer
 
     ScrapeResult:
       type: object

@@ -45,10 +45,23 @@ export const ScrapePlaylistResponse = zod.object({
 
 
 /**
- * Returns all songs tracked in the bucket manifest
- * @summary List all songs in the manifest
+ * Returns a page of songs tracked in the bucket manifest
+ * @summary List songs in the manifest (paginated)
  */
-export const GetSongsResponseItem = zod.object({
+export const getSongsQueryPageDefault = 1;
+
+export const getSongsQueryPageSizeDefault = 50;
+export const getSongsQueryPageSizeMax = 200;
+
+
+
+export const GetSongsQueryParams = zod.object({
+  "page": zod.coerce.number().min(1).default(getSongsQueryPageDefault),
+  "pageSize": zod.coerce.number().min(1).max(getSongsQueryPageSizeMax).default(getSongsQueryPageSizeDefault)
+})
+
+export const GetSongsResponse = zod.object({
+  "songs": zod.array(zod.object({
   "id": zod.string().describe('YouTube video ID'),
   "title": zod.string(),
   "channel": zod.string(),
@@ -58,8 +71,12 @@ export const GetSongsResponseItem = zod.object({
   "bucketPath": zod.string().nullish().describe('Path in bucket if downloaded'),
   "addedAt": zod.string().describe('ISO timestamp when song was added'),
   "downloadedAt": zod.string().nullish().describe('ISO timestamp when download completed')
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "pageSize": zod.number(),
+  "totalPages": zod.number()
 })
-export const GetSongsResponse = zod.array(GetSongsResponseItem)
 
 
 /**

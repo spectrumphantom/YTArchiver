@@ -8,9 +8,11 @@
 
 export * from './downloadJobStatus';
 export * from './errorResponse';
+export * from './getSongsParams';
 export * from './healthStatus';
 export * from './playlistScrapeInput';
 export * from './scrapeResult';
 export * from './song';
+export * from './songPage';
 export * from './songStats';
 export * from './songStatus';

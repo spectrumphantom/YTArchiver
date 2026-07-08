@@ -1,30 +1,12 @@
-import YTDlpWrap from "yt-dlp-wrap";
 import { promises as fs } from "fs";
 import path from "path";
 import os from "os";
-import { Storage } from "@google-cloud/storage";
-import { readManifest, writeManifest, updateSong, type Song } from "./manifest";
+import { objectStorageClient } from "./objectStorage";
+import { readManifest, mutateManifest, updateSong, type Song } from "./manifest";
+import { runYtDlp } from "./ytdlp";
 import { logger } from "./logger";
 
 const AUDIO_PREFIX = "playlist-downloader/audio";
-const YT_DLP_BINARY = "/home/runner/bin/yt-dlp";
-
-let ytDlp: YTDlpWrap | null = null;
-
-async function getYtDlp(): Promise<YTDlpWrap> {
-  if (ytDlp) return ytDlp;
-  try {
-    await fs.access(YT_DLP_BINARY);
-    ytDlp = new YTDlpWrap(YT_DLP_BINARY);
-    logger.info("Using cached yt-dlp binary");
-  } catch {
-    logger.info("Downloading yt-dlp binary...");
-    await YTDlpWrap.downloadFromGithub(YT_DLP_BINARY);
-    ytDlp = new YTDlpWrap(YT_DLP_BINARY);
-    logger.info("yt-dlp binary downloaded");
-  }
-  return ytDlp;
-}
 
 export interface DownloadJobStatus {
   running: boolean;
@@ -65,70 +47,77 @@ export async function scrapePlaylist(url: string): Promise<{
   playlistTitle: string;
   songs: Song[];
 }> {
-  const yt = await getYtDlp();
-
-  const output: string = await yt.execPromise([
-    "--flat-playlist",
-    "--print", "%(id)s\t%(title)s\t%(uploader)s\t%(duration)s\t%(thumbnail)s",
-    "--no-warnings",
-    "--ignore-errors",
-    url,
-  ]);
-
-  let playlistTitle = "YouTube Playlist";
-  try {
-    const titleOutput: string = await yt.execPromise([
+  const { stdout: output } = await runYtDlp(
+    [
       "--flat-playlist",
-      "--print", "%(playlist_title)s",
-      "--playlist-end", "1",
+      "--print",
+      "%(id)s\t%(title)s\t%(uploader,channel)s\t%(duration)s\t%(thumbnail)s\t%(playlist_title)s",
       "--no-warnings",
+      "--ignore-errors",
+      "--sleep-requests", "0.5",
       url,
-    ]);
-    playlistTitle = titleOutput.trim().split("\n")[0] || "YouTube Playlist";
-  } catch {
-    playlistTitle = "YouTube Playlist";
+    ],
+    10 * 60 * 1000
+  );
+
+  const lines = output
+    .trim()
+    .split("\n")
+    .filter((l) => l.includes("\t"));
+
+  if (lines.length === 0) {
+    throw new Error(
+      "No videos found. Make sure the playlist is public and the URL is correct."
+    );
   }
 
-  const manifest = await readManifest();
-  let newAdded = 0;
-  let alreadyExists = 0;
+  const { manifest, result } = await mutateManifest((manifest) => {
+    let newAdded = 0;
+    let alreadyExists = 0;
+    let playlistTitle = "";
 
-  const lines = output.trim().split("\n").filter((l) => l.includes("\t"));
-  for (const line of lines) {
-    const parts = line.split("\t");
-    const [id, title, channel, durationStr, thumbnailUrl] = parts;
-    if (!id || !title) continue;
+    for (const line of lines) {
+      const parts = line.split("\t");
+      const [id, title, channel, durationStr, thumbnailUrl, plTitle] = parts;
+      if (!id || !title || title === "[Private video]" || title === "[Deleted video]") continue;
 
-    if (manifest.songs[id]) {
-      alreadyExists++;
-      continue;
+      if (!playlistTitle && plTitle && plTitle !== "NA" && plTitle !== "None") {
+        playlistTitle = plTitle;
+      }
+
+      if (manifest.songs[id]) {
+        alreadyExists++;
+        continue;
+      }
+
+      const song: Song = {
+        id,
+        title: title || "Unknown",
+        channel: channel && channel !== "NA" && channel !== "None" ? channel : "Unknown",
+        duration: Math.round(parseFloat(durationStr || "0")) || 0,
+        thumbnailUrl:
+          thumbnailUrl && thumbnailUrl !== "NA" && thumbnailUrl !== "None"
+            ? thumbnailUrl
+            : null,
+        status: "pending",
+        bucketPath: null,
+        addedAt: new Date().toISOString(),
+        downloadedAt: null,
+      };
+
+      manifest.songs[id] = song;
+      newAdded++;
     }
 
-    const song: Song = {
-      id,
-      title: title || "Unknown",
-      channel: channel || "Unknown",
-      duration: parseInt(durationStr || "0", 10) || 0,
-      thumbnailUrl: thumbnailUrl && thumbnailUrl !== "NA" && thumbnailUrl !== "None" ? thumbnailUrl : null,
-      status: "pending",
-      bucketPath: null,
-      addedAt: new Date().toISOString(),
-      downloadedAt: null,
-    };
-
-    manifest.songs[id] = song;
-    newAdded++;
-  }
-
-  if (playlistTitle) manifest.playlistTitle = playlistTitle;
-  manifest.lastUpdated = new Date().toISOString();
-  await writeManifest(manifest);
+    if (playlistTitle) manifest.playlistTitle = playlistTitle;
+    return { newAdded, alreadyExists };
+  });
 
   return {
     totalFound: lines.length,
-    newAdded,
-    alreadyExists,
-    playlistTitle: manifest.playlistTitle || playlistTitle,
+    newAdded: result.newAdded,
+    alreadyExists: result.alreadyExists,
+    playlistTitle: manifest.playlistTitle || "YouTube Playlist",
     songs: Object.values(manifest.songs),
   };
 }
@@ -137,22 +126,29 @@ async function downloadSingleSong(song: Song): Promise<void> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "yt-"));
   try {
     await updateSong(song.id, { status: "downloading" });
-    const yt = await getYtDlp();
 
-    await yt.execPromise([
-      "-x",
-      "--audio-format", "mp3",
-      "--audio-quality", "0",
-      "--output", path.join(tmpDir, "%(id)s.%(ext)s"),
-      "--no-playlist",
-      "--no-warnings",
-      "--ignore-errors",
-      `https://www.youtube.com/watch?v=${song.id}`,
-    ]);
+    await runYtDlp(
+      [
+        "-x",
+        "--audio-format", "mp3",
+        "--audio-quality", "192K",
+        "--output", path.join(tmpDir, "%(id)s.%(ext)s"),
+        "--no-playlist",
+        "--no-warnings",
+        "--sleep-interval", "1",
+        "--max-sleep-interval", "3",
+        `https://www.youtube.com/watch?v=${song.id}`,
+      ],
+      15 * 60 * 1000
+    );
 
     const files = await fs.readdir(tmpDir);
     const audioFile = files.find(
-      (f) => f.endsWith(".mp3") || f.endsWith(".m4a") || f.endsWith(".opus") || f.endsWith(".webm")
+      (f) =>
+        f.endsWith(".mp3") ||
+        f.endsWith(".m4a") ||
+        f.endsWith(".opus") ||
+        f.endsWith(".webm")
     );
     if (!audioFile) throw new Error("No audio file produced");
 
@@ -160,11 +156,10 @@ async function downloadSingleSong(song: Song): Promise<void> {
     const ext = path.extname(audioFile);
     const bucketPath = `${AUDIO_PREFIX}/${song.id}${ext}`;
 
-    const storage = new Storage();
-    const bucket = storage.bucket(getBucketId());
+    const bucket = objectStorageClient.bucket(getBucketId());
     await bucket.upload(localPath, {
       destination: bucketPath,
-      metadata: { contentType: "audio/mpeg" },
+      metadata: { contentType: ext === ".mp3" ? "audio/mpeg" : "audio/mp4" },
     });
 
     await updateSong(song.id, {
@@ -186,14 +181,20 @@ export async function startDownloadJob(): Promise<void> {
   if (jobStatus.running) return;
 
   stopRequested = false;
-  jobStatus = { running: true, currentSong: null, pending: 0, completed: 0, failed: 0 };
+  jobStatus = {
+    running: true,
+    currentSong: null,
+    pending: 0,
+    completed: 0,
+    failed: 0,
+  };
 
   (async () => {
     try {
       const manifest = await readManifest();
-      const pending = Object.values(manifest.songs).filter(
-        (s) => s.status === "pending" || s.status === "downloading"
-      );
+      const pending = Object.values(manifest.songs)
+        .filter((s) => s.status === "pending" || s.status === "downloading" || s.status === "error")
+        .sort((a, b) => new Date(a.addedAt).getTime() - new Date(b.addedAt).getTime());
 
       jobStatus.pending = pending.length;
 

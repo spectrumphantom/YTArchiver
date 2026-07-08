@@ -22,10 +22,11 @@ import type {
 import type {
   DownloadJobStatus,
   ErrorResponse,
+  GetSongsParams,
   HealthStatus,
   PlaylistScrapeInput,
   ScrapeResult,
-  Song,
+  SongPage,
   SongStats
 } from './api.schemas';
 
@@ -206,21 +207,28 @@ export const useScrapePlaylist = <TError = ErrorType<ErrorResponse>,
       return useMutation(getScrapePlaylistMutationOptions(options));
     }
 
-export const getGetSongsUrl = () => {
+export const getGetSongsUrl = (params?: GetSongsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/songs`
+  return stringifiedParams.length > 0 ? `/api/songs?${stringifiedParams}` : `/api/songs`
 }
 
 /**
- * Returns all songs tracked in the bucket manifest
- * @summary List all songs in the manifest
+ * Returns a page of songs tracked in the bucket manifest
+ * @summary List songs in the manifest (paginated)
  */
-export const getSongs = async ( options?: RequestInit): Promise<Song[]> => {
+export const getSongs = async (params?: GetSongsParams, options?: RequestInit): Promise<SongPage> => {
 
-  return customFetch<Song[]>(getGetSongsUrl(),
+  return customFetch<SongPage>(getGetSongsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -233,23 +241,23 @@ export const getSongs = async ( options?: RequestInit): Promise<Song[]> => {
 
 
 
-export const getGetSongsQueryKey = () => {
+export const getGetSongsQueryKey = (params?: GetSongsParams,) => {
     return [
-    `/api/songs`
+    `/api/songs`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetSongsQueryOptions = <TData = Awaited<ReturnType<typeof getSongs>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSongs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetSongsQueryOptions = <TData = Awaited<ReturnType<typeof getSongs>>, TError = ErrorType<unknown>>(params?: GetSongsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSongs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetSongsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetSongsQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSongs>>> = ({ signal }) => getSongs({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSongs>>> = ({ signal }) => getSongs(params, { signal, ...requestOptions });
 
 
 
@@ -263,15 +271,15 @@ export type GetSongsQueryError = ErrorType<unknown>
 
 
 /**
- * @summary List all songs in the manifest
+ * @summary List songs in the manifest (paginated)
  */
 
 export function useGetSongs<TData = Awaited<ReturnType<typeof getSongs>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSongs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: GetSongsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSongs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetSongsQueryOptions(options)
+  const queryOptions = getGetSongsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
