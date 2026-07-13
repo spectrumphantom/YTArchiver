@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Play, Download, Square, Pause, CheckCircle, Clock, AlertCircle, Loader2, RefreshCw, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
+import { Play, Download, Square, Pause, CheckCircle, Clock, AlertCircle, Loader2, RefreshCw, ChevronLeft, ChevronRight, ArrowUpDown, LogOut, User } from "lucide-react";
+import { useAuth } from "@workspace/replit-auth-web";
 import {
   useScrapePlaylist,
   useGetSongs,
@@ -51,6 +52,7 @@ export default function Home() {
   const [sort, setSort] = useState<GetSongsSort>("added");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user, logout } = useAuth();
 
   const { data: downloadStatus } = useGetDownloadStatus({
     query: {
@@ -201,6 +203,29 @@ export default function Home() {
           <h1 className="text-2xl font-mono font-bold tracking-tight text-primary">YT_ARCHIVER</h1>
           <p className="text-xs text-muted-foreground font-mono mt-1">v1.0.0 // PLAYLIST_DOWNLOADER</p>
         </div>
+        <div className="flex items-center gap-3 font-mono text-xs text-muted-foreground">
+          {user && (
+            <div className="flex items-center gap-2">
+              {user.profileImageUrl ? (
+                <img src={user.profileImageUrl} alt="avatar" className="w-6 h-6 rounded-full opacity-80" />
+              ) : (
+                <User className="w-4 h-4" />
+              )}
+              <span className="hidden sm:inline">
+                {user.firstName ?? user.email ?? "USER"}
+              </span>
+            </div>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={logout}
+            className="font-mono text-xs text-muted-foreground hover:text-foreground h-7 px-2"
+          >
+            <LogOut className="w-3.5 h-3.5 mr-1" />
+            LOGOUT
+          </Button>
+        </div>
       </header>
 
       {/* Input Section */}
@@ -331,19 +356,20 @@ export default function Home() {
               <TableHead className="font-mono text-xs">CHANNEL</TableHead>
               <TableHead className="font-mono text-xs text-right">DUR</TableHead>
               <TableHead className="font-mono text-xs w-[120px]">STATUS</TableHead>
+              <TableHead className="font-mono text-xs w-[60px]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoadingSongs ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground font-mono">
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground font-mono">
                   <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
                   LOADING_MANIFEST...
                 </TableCell>
               </TableRow>
             ) : songs?.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground font-mono">
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground font-mono">
                   NO_RECORDS_FOUND
                 </TableCell>
               </TableRow>
@@ -372,6 +398,24 @@ export default function Home() {
                   </TableCell>
                   <TableCell>
                     {getStatusBadge(song.status)}
+                  </TableCell>
+                  <TableCell>
+                    {song.status === "done" && (
+                      <a
+                        href={`/api/songs/${song.id}/download`}
+                        download
+                        title="Download MP3"
+                        data-testid={`btn-download-${song.id}`}
+                      >
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-primary hover:text-primary hover:bg-primary/10"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </Button>
+                      </a>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

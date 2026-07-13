@@ -8,6 +8,17 @@ import { logger } from "./logger";
 
 const AUDIO_PREFIX = "playlist-downloader/audio";
 
+function sanitizeFilename(title: string): string {
+  return (
+    title
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "")
+      .replace(/\s+/g, "_")
+      .replace(/_{2,}/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 100) || "unknown"
+  );
+}
+
 export type JobState = "idle" | "running" | "paused";
 
 export interface DownloadJobStatus {
@@ -172,7 +183,8 @@ async function downloadSingleSong(song: Song, signal?: AbortSignal): Promise<voi
 
     const localPath = path.join(tmpDir, audioFile);
     const ext = path.extname(audioFile);
-    const bucketPath = `${AUDIO_PREFIX}/${song.id}${ext}`;
+    const safeName = sanitizeFilename(song.title);
+    const bucketPath = `${AUDIO_PREFIX}/${safeName}_[${song.id}]${ext}`;
 
     const bucket = objectStorageClient.bucket(getBucketId());
     await bucket.upload(localPath, {

@@ -1,7 +1,15 @@
 import { Router } from "express";
+import path from "path";
 import { readManifest } from "../lib/manifest";
+import { objectStorageClient } from "../lib/objectStorage";
 
 const router = Router();
+
+function getBucketId(): string {
+  const id = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  if (!id) throw new Error("DEFAULT_OBJECT_STORAGE_BUCKET_ID not set");
+  return id;
+}
 
 router.get("/songs", async (req, res) => {
   try {
@@ -67,6 +75,46 @@ router.get("/songs/stats", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Failed to get stats");
     res.status(500).json({ error: "Failed to get stats" });
+  }
+});
+
+router.get("/songs/:id/download", async (req, res) => {
+  try {
+    const manifest = await readManifest();
+    const song = manifest.songs[req.params.id];
+    if (!song || song.status !== "done" || !song.bucketPath) {
+      res.status(404).json({ error: "Song not downloaded yet" });
+      return;
+    }
+
+    const bucket = objectStorageClient.bucket(getBucketId());
+    const file = bucket.file(song.bucketPath);
+    const [exists] = await file.exists();
+    if (!exists) {
+      res.status(404).json({ error: "Audio file not found in storage" });
+      return;
+    }
+
+    const ext = path.extname(song.bucketPath) || ".mp3";
+    const safeTitle = song.title
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "")
+      .replace(/\s+/g, "_")
+      .slice(0, 100);
+    const filename = `${safeTitle}${ext}`;
+
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+    );
+    res.setHeader(
+      "Content-Type",
+      ext === ".mp3" ? "audio/mpeg" : "audio/mp4"
+    );
+
+    file.createReadStream().pipe(res);
+  } catch (err) {
+    req.log.error({ err, id: req.params.id }, "Failed to download song");
+    res.status(500).json({ error: "Failed to stream audio file" });
   }
 });
 
