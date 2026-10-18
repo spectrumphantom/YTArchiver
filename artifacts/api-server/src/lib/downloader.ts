@@ -170,6 +170,9 @@ export async function scrapePlaylist(url: string): Promise<{
   };
 }
 
+// null = yt-dlp's default clients.
+const FALLBACK_CLIENTS: (string | null)[] = [null, "web_embedded", "tv_simply", "android"];
+
 function isAbortError(err: unknown): boolean {
   return err instanceof Error && err.name === "AbortError";
 }
@@ -179,21 +182,41 @@ async function downloadSingleSong(song: Song, signal?: AbortSignal): Promise<voi
   try {
     await updateSong(song.id, { status: "downloading", errorReason: null, errorDetails: null });
 
-    await runYtDlp(
-      [
-        "-x",
-        "--audio-format", "mp3",
-        "--audio-quality", "192K",
-        "--output", path.join(tmpDir, "%(id)s.%(ext)s"),
-        "--no-playlist",
-        "--no-warnings",
-        "--sleep-interval", "1",
-        "--max-sleep-interval", "3",
-        `https://www.youtube.com/watch?v=${song.id}`,
-      ],
-      15 * 60 * 1000,
-      signal
-    );
+    // Some videos return HTTP 403 for the default player client's stream URLs
+    // while other clients can fetch them. Try the default first, then fall back.
+    let lastError: unknown;
+    for (const client of FALLBACK_CLIENTS) {
+      try {
+        for (const leftover of await fs.readdir(tmpDir)) {
+          await fs.rm(path.join(tmpDir, leftover), { recursive: true, force: true });
+        }
+        await runYtDlp(
+          [
+            "-x",
+            "--audio-format", "mp3",
+            "--audio-quality", "192K",
+            "--output", path.join(tmpDir, "%(id)s.%(ext)s"),
+            "--no-playlist",
+            "--no-warnings",
+            "--js-runtimes", "node",
+            ...(client ? ["--extractor-args", `youtube:player_client=${client}`] : []),
+            "--sleep-interval", "1",
+            "--max-sleep-interval", "3",
+            `https://www.youtube.com/watch?v=${song.id}`,
+          ],
+          15 * 60 * 1000,
+          signal
+        );
+        lastError = undefined;
+        if (client) logger.info({ id: song.id, client }, "Downloaded using fallback YouTube client");
+        break;
+      } catch (err) {
+        lastError = err;
+        if (isAbortError(err) || !/HTTP Error 403|Forbidden/i.test(String(err instanceof Error ? err.message : err))) throw err;
+        logger.warn({ id: song.id, client: client ?? "default" }, "YouTube returned 403; trying another client");
+      }
+    }
+    if (lastError) throw lastError;
 
     const files = await fs.readdir(tmpDir);
     const audioFile = files.find(

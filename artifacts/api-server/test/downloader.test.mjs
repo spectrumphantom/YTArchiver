@@ -43,6 +43,11 @@ state.runYtDlp = async (args) => {
   try {
     await new Promise((resolve) => setTimeout(resolve, 10));
     if (id === state.failId) throw new Error("Fixture video unavailable");
+    const client = args.find((a) => a.startsWith("youtube:player_client="))?.split("=")[1] ?? "default";
+    state.clientsTried = [...(state.clientsTried ?? []), `${id}:${client}`];
+    if (state.forbiddenClients?.[id]?.includes(client)) {
+      throw new Error("yt-dlp exited with code 1: ERROR: unable to download video data: HTTP Error 403: Forbidden");
+    }
     const template = args[args.indexOf("--output") + 1];
     await writeFile(path.join(path.dirname(template), `${id}.mp3`), "fixture audio");
     return { stdout: "" };
@@ -191,6 +196,19 @@ test("server processes tracks beyond the first UI page and clears old failure de
   assert.deepEqual(state.calls, ids);
   assert.equal(state.manifest.songs.track0.errorReason, null);
   assert.equal(state.manifest.songs.track0.errorDetails, null);
+});
+
+test("HTTP 403 retries with other YouTube clients before reporting failure", async () => {
+  state.manifest = { songs: { x: song("x"), y: song("y") }, playlistSongIds: ["x", "y"] };
+  state.forbiddenClients = { x: ["default", "web_embedded"], y: ["default", "web_embedded", "tv_simply", "android"] };
+  state.clientsTried = [];
+  await downloader.startDownloadJob();
+  await finishJob();
+  assert.equal(state.manifest.songs.x.status, "done");
+  assert.deepEqual(state.clientsTried.filter((t) => t.startsWith("x:")), ["x:default", "x:web_embedded", "x:tv_simply"]);
+  assert.equal(state.manifest.songs.y.status, "error");
+  assert.match(state.manifest.songs.y.errorReason, /HTTP 403/);
+  state.forbiddenClients = null;
 });
 
 test("an empty/private playlist fails without replacing the previous playlist", async () => {
