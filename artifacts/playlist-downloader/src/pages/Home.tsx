@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Play, Trash2, Download, Square, Pause, CheckCircle, Clock, AlertCircle, Loader2, RefreshCw, ChevronLeft, ChevronRight, ArrowUpDown, LogOut, User, KeyRound, ExternalLink } from "lucide-react";
+import { Play, Trash2, Download, Square, Pause, CheckCircle, Clock, AlertCircle, Loader2, RefreshCw, ChevronLeft, ChevronRight, ArrowUpDown, LogOut, User } from "lucide-react";
 import { useUser, useClerk } from "@clerk/react";
 import { Link } from "wouter";
 import {
@@ -36,14 +36,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -391,40 +383,6 @@ export default function Home() {
           )}
         </Button>
       </form>
-      <Dialog>
-        <DialogTrigger asChild>
-          <Button type="button" variant="outline" className="h-9 font-mono text-xs" data-testid="button-youtube-access-help">
-            <KeyRound className="mr-2 h-3.5 w-3.5" />
-            YOUTUBE ACCESS HELP
-          </Button>
-        </DialogTrigger>
-        <DialogContent className="font-mono">
-          <DialogHeader>
-            <DialogTitle className="text-primary">YOUTUBE COOKIE HELP</DialogTitle>
-            <DialogDescription className="text-left">
-              The Chrome Web Store listing you shared is a third-party extension. Review its publisher and permissions before installing.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 text-sm text-muted-foreground">
-            <p>
-              This downloader cannot import or use browser cookies. Signing in to YouTube in another tab does not share your browser session with the downloader server.
-            </p>
-            <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-foreground">
-              Do not paste or upload Netscape cookie text here. Exported cookies can grant access to your YouTube account.
-            </p>
-          </div>
-          <a
-            href="https://chromewebstore.google.com/detail/hlkenndednhfkekhgcdicdfddnkalmdm"
-            target="_blank"
-            rel="noopener noreferrer"
-            referrerPolicy="no-referrer"
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <ExternalLink className="h-4 w-4" />
-            OPEN CHROME WEB STORE
-          </a>
-        </DialogContent>
-      </Dialog>
       {(jobRunning || unfinishedDeviceQueue) && (
         <p className="text-xs font-mono text-muted-foreground">
           Stop the current downloads before switching playlists.
