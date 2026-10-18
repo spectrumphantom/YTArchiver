@@ -91,30 +91,14 @@ export interface DownloadJobStatus {
   failed: number;
 }
 
-export interface AuthUser {
+export interface Account {
   id: string;
-  /** @nullable */
-  email: string | null;
-  /** @nullable */
-  firstName: string | null;
-  /** @nullable */
-  lastName: string | null;
-  /** @nullable */
-  profileImageUrl: string | null;
-}
-
-export interface AuthUserEnvelope {
-  user: AuthUser | null;
+  createdAt: string;
 }
 
 export interface ErrorResponse {
   error: string;
 }
-
-/**
- * Opaque session token — Bearer <sid>.
- */
-export type AuthorizationSessionHeaderParameter = string;
 
 export type GetSongsParams = {
 /**
@@ -140,14 +124,4 @@ export const GetSongsSort = {
   title: 'title',
   channel: 'channel',
 } as const;
-
-export type BeginBrowserLoginParams = {
-returnTo?: string;
-};
-
-export type HandleBrowserLoginCallbackParams = {
-code?: string;
-state?: string;
-iss?: string;
-};
 

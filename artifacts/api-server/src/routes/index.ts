@@ -4,15 +4,14 @@ import storageRouter from "./storage";
 import playlistRouter from "./playlist";
 import songsRouter from "./songs";
 import downloadsRouter from "./downloads";
-import authRouter from "./auth";
+import accountRouter from "./account";
+import { requireAuth } from "../middlewares/requireAuth";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
-router.use(authRouter);
+router.use(accountRouter);
 router.use(storageRouter);
-router.use(playlistRouter);
-router.use(songsRouter);
-router.use(downloadsRouter);
+router.use(requireAuth, playlistRouter, songsRouter, downloadsRouter);
 
 export default router;

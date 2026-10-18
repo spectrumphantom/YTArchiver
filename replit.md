@@ -1,6 +1,6 @@
-# [Project name]
+# YT_ARCHIVER
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+YouTube playlist archiver with cloud-stored audio downloads.
 
 ## Run & Operate
 
@@ -26,7 +26,10 @@ _Populate as you build — short repo map plus pointers to the source-of-truth f
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Authentication uses Replit-managed Clerk with Google and email sign-in. Web API requests use same-origin session cookies only.
+- Local users remain the source of application state. The bridge uses the verified `sessionClaims.userId`, preserving migrated IDs; Clerk native IDs are only for Clerk API calls.
+- First authenticated requests provision only the local ID. Nullable identity fields are no longer synchronized. Existing users and sessions tables remain intact.
+- The song archive remains shared across authenticated users; this migration does not introduce per-user archives.
 
 ## Product
 

@@ -1,10 +1,8 @@
-import { useAuth } from "@workspace/replit-auth-web";
-import { Loader2, Lock, Music2, HardDrive, Zap } from "lucide-react";
+import { Link } from "wouter";
+import { Lock, Music2, HardDrive, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function LoginScreen() {
-  const { login, isLoading } = useAuth();
-
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden">
       {/* Subtle grid background */}
@@ -48,21 +46,17 @@ export default function LoginScreen() {
 
         {/* Login CTA */}
         <div className="space-y-4">
-          <Button
-            onClick={login}
-            disabled={isLoading}
+          <Button asChild
             size="lg"
             className="w-full font-mono text-base tracking-widest h-12 bg-primary text-primary-foreground hover:bg-primary/90"
           >
-            {isLoading ? (
-              <Loader2 className="w-5 h-5 animate-spin mr-3" />
-            ) : (
+            <Link href="/sign-in">
               <Lock className="w-5 h-5 mr-3" />
-            )}
-            LOG_IN // AUTHENTICATE
+              LOG_IN // AUTHENTICATE
+            </Link>
           </Button>
           <p className="text-center text-[11px] font-mono text-muted-foreground/60">
-            SECURE SSO AUTH — NO PASSWORDS STORED
+            SECURE SIGN-IN — GOOGLE OR EMAIL
           </p>
         </div>
       </div>

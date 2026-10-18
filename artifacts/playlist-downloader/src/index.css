@@ -1,8 +1,15 @@
+@layer theme, base, clerk, components, utilities;
 @import "tailwindcss";
+@import "@clerk/themes/shadcn.css";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
+
+.cl-formFieldInput::placeholder {
+  color: #a1a1aa;
+  opacity: 1;
+}
 
 @theme inline {
   --color-background: hsl(var(--background));

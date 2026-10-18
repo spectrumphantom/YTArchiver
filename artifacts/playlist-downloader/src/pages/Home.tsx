@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Play, Download, Square, Pause, CheckCircle, Clock, AlertCircle, Loader2, RefreshCw, ChevronLeft, ChevronRight, ArrowUpDown, LogOut, User } from "lucide-react";
-import { useAuth } from "@workspace/replit-auth-web";
+import { useUser, useClerk } from "@clerk/react";
+import { Link } from "wouter";
 import {
   useScrapePlaylist,
   useGetSongs,
@@ -52,7 +53,8 @@ export default function Home() {
   const [sort, setSort] = useState<GetSongsSort>("added");
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { user, logout } = useAuth();
+  const { user } = useUser();
+  const { signOut } = useClerk();
 
   const { data: downloadStatus } = useGetDownloadStatus({
     query: {
@@ -206,20 +208,21 @@ export default function Home() {
         <div className="flex items-center gap-3 font-mono text-xs text-muted-foreground">
           {user && (
             <div className="flex items-center gap-2">
-              {user.profileImageUrl ? (
-                <img src={user.profileImageUrl} alt="avatar" className="w-6 h-6 rounded-full opacity-80" />
+              {user.imageUrl ? (
+                <img src={user.imageUrl} alt="avatar" className="w-6 h-6 rounded-full opacity-80" />
               ) : (
                 <User className="w-4 h-4" />
               )}
               <span className="hidden sm:inline">
-                {user.firstName ?? user.email ?? "USER"}
+                {user.firstName ?? user.primaryEmailAddress?.emailAddress ?? "USER"}
               </span>
             </div>
           )}
+          <Link href="/account" className="hover:text-foreground">ACCOUNT</Link>
           <Button
             variant="ghost"
             size="sm"
-            onClick={logout}
+            onClick={() => signOut({ redirectUrl: import.meta.env.BASE_URL })}
             className="font-mono text-xs text-muted-foreground hover:text-foreground h-7 px-2"
           >
             <LogOut className="w-3.5 h-3.5 mr-1" />

@@ -158,52 +158,11 @@ export const StopDownloadsResponse = zod.object({
 
 
 /**
- * @summary Get the currently authenticated user
+ * @summary Resolve the authenticated user's local application account
  */
-export const GetCurrentAuthUserHeader = zod.object({
-  "Authorization": zod.string().optional().describe('Opaque session token — Bearer <sid>.')
-})
-
-export const GetCurrentAuthUserResponse = zod.object({
-  "user": zod.union([zod.object({
+export const GetAccountResponse = zod.object({
   "id": zod.string(),
-  "email": zod.string().nullable(),
-  "firstName": zod.string().nullable(),
-  "lastName": zod.string().nullable(),
-  "profileImageUrl": zod.string().nullable()
-}),zod.null()])
+  "createdAt": zod.string()
 })
-
-
-/**
- * @summary Start the browser OIDC login flow
- */
-export const BeginBrowserLoginQueryParams = zod.object({
-  "returnTo": zod.coerce.string().optional()
-})
-
-export const BeginBrowserLoginResponse = zod.void()
-
-
-/**
- * @summary Complete the browser OIDC login flow
- */
-export const HandleBrowserLoginCallbackQueryParams = zod.object({
-  "code": zod.coerce.string().optional(),
-  "state": zod.coerce.string().optional(),
-  "iss": zod.coerce.string().optional()
-})
-
-export const HandleBrowserLoginCallbackResponse = zod.void()
-
-
-/**
- * @summary Clear the session and begin OIDC logout
- */
-export const LogoutBrowserSessionHeader = zod.object({
-  "Authorization": zod.string().optional().describe('Opaque session token — Bearer <sid>.')
-})
-
-export const LogoutBrowserSessionResponse = zod.void()
 
 
