@@ -423,16 +423,12 @@ components:
           type: integer
         downloaded:
           type: integer
-          description: Songs whose saved audio is available in storage
         pending:
           type: integer
-          description: All unfinished songs, including active downloads and failed attempts
         downloading:
           type: integer
-          description: Pending songs currently being downloaded
         error:
           type: integer
-          description: Pending songs whose last attempt failed
 
     DownloadJobStatus:
       type: object

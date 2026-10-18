@@ -289,23 +289,23 @@ export default function Home() {
     switch (status) {
       case "done":
         return (
-          <Badge title="Audio file is saved and available to download" variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 font-mono">
+          <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20 font-mono">
             <CheckCircle className="w-3 h-3 mr-1" />
             DONE
           </Badge>
         );
       case "error":
         return (
-          <Badge title="Pending — the last attempt failed. See the reason under the song title." variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20 font-mono">
+          <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20 font-mono">
             <AlertCircle className="w-3 h-3 mr-1" />
-            PENDING
+            ERROR
           </Badge>
         );
       case "downloading":
         return (
-          <Badge title="Pending — audio is currently downloading" variant="outline" className="bg-blue-500/10 border-blue-500/20 font-mono animate-pulse-blue">
+          <Badge variant="outline" className="bg-blue-500/10 border-blue-500/20 font-mono animate-pulse-blue">
             <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-            PENDING
+            DLING
           </Badge>
         );
       default:

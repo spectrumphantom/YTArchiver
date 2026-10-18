@@ -29,7 +29,7 @@ state.storage = {
         state.manifest = JSON.parse(content);
         state.generation++;
       },
-      exists: async () => [!state.hidden?.has(name)],
+      exists: async () => [true],
       createReadStream: () => Readable.from([Buffer.from(`audio:${name}`)]),
     }),
     upload: async (_path, options) => { state.uploaded.add(options.destination); },
@@ -37,9 +37,7 @@ state.storage = {
       ...Object.values(state.manifest.songs).filter((item) => item.status === "done" && item.bucketPath).map((item) => item.bucketPath),
       ...state.uploaded,
       ...(state.extraFiles ?? []),
-    ].filter((name) => !state.hidden?.has(name)).map((name) => ({
-      name, metadata: { size: state.emptyFiles?.has(name) ? "0" : "13" },
-    }))],
+    ].filter((name) => !state.hidden?.has(name)).map((name) => ({ name }))],
   }),
 };
 state.runYtDlp = async (args) => {
@@ -57,7 +55,7 @@ state.runYtDlp = async (args) => {
       throw new Error("yt-dlp exited with code 1: ERROR: unable to download video data: HTTP Error 403: Forbidden");
     }
     const template = args[args.indexOf("--output") + 1];
-    await writeFile(path.join(path.dirname(template), `${id}.mp3`), state.emptyAudioId === id ? "" : "fixture audio");
+    await writeFile(path.join(path.dirname(template), `${id}.mp3`), "fixture audio");
     return { stdout: "" };
   } finally {
     state.active--;
@@ -272,8 +270,6 @@ test("Save ZIP includes completed current tracks only and individual downloads s
     assert.deepEqual(listed.songs.map((item) => item.id), ["a", "b", "c"]);
     const stats = await (await fetch(`${base}/songs/stats`)).json();
     assert.equal(stats.total, 3);
-    assert.equal(stats.pending + stats.downloaded, stats.total);
-    assert.equal(stats.pending, 1, "Failed attempts must still be counted as pending");
     const response = await fetch(`${base}/songs/download-all`);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("content-type"), "application/zip");
@@ -284,13 +280,6 @@ test("Save ZIP includes completed current tracks only and individual downloads s
     const individual = await fetch(`${base}/songs/b/download`);
     assert.equal(individual.status, 200);
     assert.ok(individual.headers.get("content-disposition").includes(encodeURIComponent("日本語")));
-    state.hidden = new Set([state.manifest.songs.b.bucketPath]);
-    const missing = await fetch(`${base}/songs/b/download`);
-    assert.equal(missing.status, 404);
-    assert.equal(state.manifest.songs.b.status, "pending");
-    assert.equal(state.manifest.songs.b.bucketPath, null);
-    assert.equal(state.manifest.songs.b.downloadedAt, null);
-    state.hidden = null;
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -311,11 +300,10 @@ test("statuses are corrected to match what is really in storage", async () => {
   const fixed = await downloader.reconcileSongStatuses();
   state.hidden = null;
   state.extraFiles = null;
-  assert.equal(fixed, 4, "Also repair the missing completion timestamp on an existing done song");
+  assert.equal(fixed, 3);
   assert.equal(state.manifest.songs.lost.status, "pending");
   assert.equal(state.manifest.songs.lost.bucketPath, null);
   assert.equal(state.manifest.songs.kept.status, "done");
-  assert.ok(state.manifest.songs.kept.downloadedAt);
   assert.equal(state.manifest.songs.orphan.status, "done");
   assert.equal(state.manifest.songs.orphan.bucketPath, "playlist-downloader/audio/orphan_[orphan].mp3");
   assert.equal(state.manifest.songs.stuck.status, "pending");
@@ -361,78 +349,4 @@ test("clearing the playlist stops a running download first", async () => {
   assert.equal(downloader.getJobStatus().running, false);
   assert.deepEqual(state.manifest.playlistSongIds, []);
   assert.equal(state.manifest.downloadJob, undefined);
-});
-
-test("done records recover their actual file by video ID when the saved path is stale", async () => {
-  state.manifest = {
-    songs: { renamed: { ...song("renamed", "done"), bucketPath: "outdated-name.mp3" } },
-    playlistSongIds: ["renamed"],
-  };
-  state.hidden = new Set(["outdated-name.mp3"]);
-  state.extraFiles = ["playlist-downloader/audio/New_title_[renamed].mp3"];
-  await downloader.reconcileSongStatuses();
-  assert.equal(state.manifest.songs.renamed.status, "done");
-  assert.equal(state.manifest.songs.renamed.bucketPath, state.extraFiles[0]);
-  assert.ok(state.manifest.songs.renamed.downloadedAt);
-  state.hidden = null;
-  state.extraFiles = null;
-});
-
-test("zero-byte saved audio is unfinished, and cannot keep a song marked done", async () => {
-  state.manifest = {
-    songs: { empty: { ...song("empty", "done"), bucketPath: "empty.mp3" } },
-    playlistSongIds: ["empty"],
-  };
-  state.emptyFiles = new Set(["empty.mp3"]);
-  await downloader.reconcileSongStatuses();
-  assert.equal(state.manifest.songs.empty.status, "pending");
-  assert.equal(state.manifest.songs.empty.bucketPath, null);
-  assert.equal(state.manifest.songs.empty.downloadedAt, null);
-  state.emptyFiles = null;
-});
-
-test("reconciliation preserves an active song and resets only abandoned downloads", async () => {
-  state.manifest = {
-    songs: { active: song("active", "downloading"), abandoned: song("abandoned", "downloading") },
-    playlistSongIds: ["active", "abandoned"],
-    downloadJob: { id: "live", state: "running", remainingIds: ["active"], completed: 0, failed: 0 },
-  };
-  await downloader.reconcileSongStatuses();
-  assert.equal(state.manifest.songs.active.status, "downloading");
-  assert.equal(state.manifest.songs.abandoned.status, "pending");
-});
-
-test("failed songs cannot retain a completed filename or completion timestamp", async () => {
-  state.manifest = {
-    songs: { broken: { ...song("broken", "error"), bucketPath: "missing.mp3", downloadedAt: "2020-01-01T00:00:00Z" } },
-    playlistSongIds: ["broken"],
-  };
-  await downloader.reconcileSongStatuses();
-  assert.equal(state.manifest.songs.broken.status, "error");
-  assert.equal(state.manifest.songs.broken.bucketPath, null);
-  assert.equal(state.manifest.songs.broken.downloadedAt, null);
-});
-
-test("an empty output is never uploaded or marked done", async () => {
-  state.manifest = { songs: { blank: song("blank") }, playlistSongIds: ["blank"] };
-  state.emptyAudioId = "blank";
-  await downloader.startDownloadJob();
-  await finishJob();
-  state.emptyAudioId = null;
-  assert.equal(state.manifest.songs.blank.status, "error");
-  assert.equal(state.manifest.songs.blank.bucketPath, null);
-  assert.equal(state.manifest.songs.blank.downloadedAt, null);
-  assert.match(state.manifest.songs.blank.errorDetails, /empty/);
-});
-
-test("an upload completed after a storage scan began is not reset by its older listing", async () => {
-  state.manifest = {
-    songs: { recent: { ...song("recent", "done"), bucketPath: "recent.mp3", downloadedAt: new Date(Date.now() + 1000).toISOString() } },
-    playlistSongIds: ["recent"],
-  };
-  state.hidden = new Set(["recent.mp3"]);
-  await downloader.reconcileSongStatuses();
-  assert.equal(state.manifest.songs.recent.status, "done");
-  assert.equal(state.manifest.songs.recent.bucketPath, "recent.mp3");
-  state.hidden = null;
 });

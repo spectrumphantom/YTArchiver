@@ -1,9 +1,8 @@
 import { Router } from "express";
 import path from "path";
 import { ZipArchive } from "archiver";
-import { readManifest, getPlaylistSongs, mutateManifest } from "../lib/manifest";
+import { readManifest, getPlaylistSongs } from "../lib/manifest";
 import { objectStorageClient } from "../lib/objectStorage";
-import { refreshSongStatuses } from "../lib/downloader";
 
 const router = Router();
 
@@ -15,7 +14,6 @@ function getBucketId(): string {
 
 router.get("/songs", async (req, res) => {
   try {
-    await refreshSongStatuses();
     const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
     const pageSize = Math.min(
       200,
@@ -65,13 +63,12 @@ router.get("/songs", async (req, res) => {
 
 router.get("/songs/stats", async (req, res) => {
   try {
-    await refreshSongStatuses();
     const manifest = await readManifest();
     const songs = getPlaylistSongs(manifest);
     const stats = {
       total: songs.length,
       downloaded: songs.filter((s) => s.status === "done").length,
-      pending: songs.filter((s) => s.status !== "done").length,
+      pending: songs.filter((s) => s.status === "pending").length,
       downloading: songs.filter((s) => s.status === "downloading").length,
       error: songs.filter((s) => s.status === "error").length,
     };
@@ -122,7 +119,6 @@ router.get("/songs/download-all", async (req, res) => {
 
 router.get("/songs/:id", async (req, res) => {
   try {
-    await refreshSongStatuses();
     const song = (await readManifest()).songs[req.params.id];
     if (!song) {
       res.status(404).json({ error: "Song not found" });
@@ -148,14 +144,6 @@ router.get("/songs/:id/download", async (req, res) => {
     const file = bucket.file(song.bucketPath);
     const [exists] = await file.exists();
     if (!exists) {
-      await mutateManifest((current) => {
-        const latest = current.songs[song.id];
-        if (latest?.status === "done" && latest.bucketPath === song.bucketPath && latest.downloadedAt === song.downloadedAt) {
-          latest.status = "pending";
-          latest.bucketPath = null;
-          latest.downloadedAt = null;
-        }
-      });
       res.status(404).json({ error: "Audio file not found in storage" });
       return;
     }

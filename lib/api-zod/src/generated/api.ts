@@ -120,10 +120,10 @@ export const DownloadSongResponse = zod.unknown()
  */
 export const GetSongStatsResponse = zod.object({
   "total": zod.number(),
-  "downloaded": zod.number().describe('Songs whose saved audio is available in storage'),
-  "pending": zod.number().describe('All unfinished songs, including active downloads and failed attempts'),
-  "downloading": zod.number().describe('Pending songs currently being downloaded'),
-  "error": zod.number().describe('Pending songs whose last attempt failed')
+  "downloaded": zod.number(),
+  "pending": zod.number(),
+  "downloading": zod.number(),
+  "error": zod.number()
 })
 
 

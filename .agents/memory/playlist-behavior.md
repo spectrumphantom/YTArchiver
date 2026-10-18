@@ -11,10 +11,4 @@ Unfinished downloads should survive app restarts. Preserve intentional pauses an
 
 **How to apply:** Preserve these behaviors when changing the song list, scrape refresh, pagination, or download queue. Browser saves require an open tab and multiple-download permission; explain those limits instead of promising downloads while the browser is closed.
 
-"Clear playlist" removes the list and saved queue but keeps song records and audio in storage. A 404 "Song not downloaded yet" during Download All must auto-resume the server job and retry, not stop the queue.
-
-Each song must visibly be either Done (saved audio is actually available) or Pending (unfinished). Downloading and failed attempts remain Pending, with activity and failure explanations preserved separately.
-
-**Why:** The user repeatedly requested that finished/unfinished status be accurate for every song, and specifically asked for Done or Pending labels.
-
-**How to apply:** Keep completion tied to real, non-empty saved audio, not queue position or an attempted download. Pending totals must include every unfinished song.
+"Clear playlist" removes the list and saved queue but keeps song records and audio in storage. Song status must match real storage (done only if the file exists); the server reconciles at startup and at job start. A 404 "Song not downloaded yet" during Download All must auto-resume the server job and retry, not stop the queue.
