@@ -7,13 +7,14 @@ import { Readable } from "stream";
 import { pipeline } from "stream/promises";
 import { logger } from "./logger";
 
-const YT_DLP_VERSION = "2026.07.04";
+const YT_DLP_VERSION = "2026.08.19";
 const YT_DLP_URL = `https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}/yt-dlp_linux`;
 const YT_DLP_SHA256 =
-  "6bbb3d314cde4febe36e5fa1d55462e29c974f63444e707871834f6d8cc210ae";
+  "58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a";
 
 const BINARY_DIR = path.join(os.homedir(), "bin");
-const BINARY_PATH = path.join(BINARY_DIR, "yt-dlp");
+// A new pin must not silently reuse an executable from a previous release.
+const BINARY_PATH = path.join(BINARY_DIR, `yt-dlp-${YT_DLP_VERSION}`);
 
 let ensured = false;
 let ensuring: Promise<string> | null = null;
@@ -25,19 +26,23 @@ export async function ensureYtDlp(): Promise<string> {
   ensuring = (async () => {
     try {
       await fs.access(BINARY_PATH, fs.constants.X_OK);
-      ensured = true;
-      return BINARY_PATH;
+      const installedHash = createHash("sha256").update(await fs.readFile(BINARY_PATH)).digest("hex");
+      if (installedHash === YT_DLP_SHA256) {
+        ensured = true;
+        return BINARY_PATH;
+      }
+      logger.warn("Installed yt-dlp checksum differs from the pinned release; replacing it");
     } catch {
       // fall through to download
     }
 
-    logger.info("Downloading yt-dlp standalone binary...");
+    logger.info({ version: YT_DLP_VERSION }, "Downloading yt-dlp standalone binary...");
     await fs.mkdir(BINARY_DIR, { recursive: true });
     const res = await fetch(YT_DLP_URL, { redirect: "follow" });
     if (!res.ok || !res.body) {
       throw new Error(`Failed to download yt-dlp: HTTP ${res.status}`);
     }
-    const tmpPath = `${BINARY_PATH}.tmp`;
+    const tmpPath = `${BINARY_PATH}.${process.pid}.tmp`;
     await pipeline(
       Readable.fromWeb(res.body as import("stream/web").ReadableStream),
       createWriteStream(tmpPath)

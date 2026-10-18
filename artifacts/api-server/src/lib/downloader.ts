@@ -8,6 +8,7 @@ import { logger } from "./logger";
 import { randomUUID } from "node:crypto";
 import { describeDownloadError } from "./downloadErrors";
 import type { SavedDownloadJob } from "./manifest";
+import { extractPlaylistMetadata } from "./playlistExtraction";
 
 const AUDIO_PREFIX = "playlist-downloader/audio";
 
@@ -83,18 +84,7 @@ export async function scrapePlaylist(url: string): Promise<{
   playlistTitle: string;
   songs: Song[];
 }> {
-  const { stdout: output } = await runYtDlp(
-    [
-      "--flat-playlist",
-      "--print",
-      "%(id)s\t%(title)s\t%(uploader,channel)s\t%(duration)s\t%(thumbnail)s\t%(playlist_title)s",
-      "--no-warnings",
-      "--ignore-errors",
-      "--sleep-requests", "0.5",
-      url,
-    ],
-    10 * 60 * 1000
-  );
+  const output = await extractPlaylistMetadata(url);
 
   const lines = output
     .trim()
