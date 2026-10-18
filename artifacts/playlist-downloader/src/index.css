@@ -151,3 +151,70 @@
 .animate-pulse-blue {
   animation: pulse-blue 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+.playlist-page {
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+}
+
+/* Keep phone rows in normal flow instead of squeezing a six-column table. */
+@media (max-width: 639px) {
+  .playlist-table,
+  .playlist-table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .playlist-table thead {
+    display: none;
+  }
+
+  .playlist-table .song-row {
+    display: grid;
+    grid-template-columns: 3rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+
+  .playlist-table .song-row > td {
+    min-width: 0;
+    max-width: none;
+    padding: 0;
+  }
+
+  .playlist-table .song-thumbnail {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .playlist-table .song-title {
+    grid-column: 2 / 4;
+    grid-row: 1;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .playlist-table .song-channel,
+  .playlist-table .song-duration {
+    display: none;
+  }
+
+  .playlist-table .song-status {
+    grid-column: 1 / 3;
+    grid-row: 2;
+  }
+
+  .playlist-table .song-action {
+    grid-column: 3;
+    grid-row: 2;
+  }
+}
+
+@media (min-width: 640px) {
+  .playlist-page {
+    padding-left: max(1.5rem, env(safe-area-inset-left));
+    padding-right: max(1.5rem, env(safe-area-inset-right));
+  }
+}

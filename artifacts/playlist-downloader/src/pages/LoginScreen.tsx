@@ -48,10 +48,10 @@ export default function LoginScreen() {
         <div className="space-y-4">
           <Button asChild
             size="lg"
-            className="w-full font-mono text-base tracking-widest h-12 bg-primary text-primary-foreground hover:bg-primary/90"
+            className="w-full gap-2 px-2 sm:px-6 font-mono text-xs sm:text-base tracking-wide sm:tracking-widest h-12 bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Link href="/sign-in">
-              <Lock className="w-5 h-5 mr-3" />
+              <Lock className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
               LOG_IN // AUTHENTICATE
             </Link>
           </Button>

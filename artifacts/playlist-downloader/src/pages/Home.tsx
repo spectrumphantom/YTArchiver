@@ -289,14 +289,14 @@ export default function Home() {
   const progressPercent = totalSongs > 0 ? (downloadedCount / totalSongs) * 100 : 0;
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-8">
+    <div className="playlist-page w-full min-w-0 max-w-6xl mx-auto p-3 sm:p-6 space-y-5 sm:space-y-8">
       {/* Header */}
-      <header className="flex items-center justify-between border-b border-border pb-4">
-        <div>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-4">
+        <div className="min-w-0">
           <h1 className="text-2xl font-mono font-bold tracking-tight text-primary">YT_ARCHIVER</h1>
           <p className="text-xs text-muted-foreground font-mono mt-1">v1.0.0 // PLAYLIST_DOWNLOADER</p>
         </div>
-        <div className="flex items-center gap-3 font-mono text-xs text-muted-foreground">
+        <div className="flex min-w-0 flex-wrap items-center gap-3 font-mono text-xs text-muted-foreground">
           {user && (
             <div className="flex items-center gap-2">
               {user.imageUrl ? (
@@ -304,7 +304,7 @@ export default function Home() {
               ) : (
                 <User className="w-4 h-4" />
               )}
-              <span className="hidden sm:inline">
+              <span className="hidden sm:inline max-w-32 truncate">
                 {user.firstName ?? user.primaryEmailAddress?.emailAddress ?? "USER"}
               </span>
             </div>
@@ -323,19 +323,19 @@ export default function Home() {
       </header>
 
       {/* Input Section */}
-      <form onSubmit={handleScrape} className="flex gap-2">
+      <form onSubmit={handleScrape} className="flex min-w-0 flex-col sm:flex-row gap-2">
         <Input
           placeholder="PASTE YOUTUBE PLAYLIST URL..."
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          className="font-mono bg-card border-card-border"
+          className="min-w-0 h-11 font-mono bg-card border-card-border"
           disabled={scrapePlaylist.isPending || jobRunning}
           data-testid="input-playlist-url"
         />
         <Button
           type="submit"
           disabled={scrapePlaylist.isPending || jobRunning || !url.trim()}
-          className="font-mono min-w-[120px]"
+          className="h-11 font-mono sm:min-w-[120px]"
           data-testid="button-scrape"
         >
           {scrapePlaylist.isPending ? (
@@ -359,16 +359,16 @@ export default function Home() {
         </p>
       )}
       {scrapePlaylist.data && (
-        <p className="text-xs font-mono text-primary">
+        <p className="break-words text-xs font-mono text-primary">
           CURRENT PLAYLIST: {scrapePlaylist.data.playlistTitle} // {totalSongsCount} TRACKS
         </p>
       )}
 
       {/* Stats & Controls */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="p-4 md:col-span-3 flex flex-col justify-center space-y-3 bg-card/50">
-          <div className="flex justify-between items-end font-mono text-sm">
-            <div className="flex gap-6">
+      <div className="grid min-w-0 grid-cols-1 lg:grid-cols-4 gap-4">
+        <Card className="min-w-0 p-4 lg:col-span-3 flex flex-col justify-center space-y-3 bg-card/50">
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-end font-mono text-sm">
+            <div className="grid min-w-0 grid-cols-4 gap-3 sm:gap-6">
               <div>
                 <span className="text-muted-foreground block text-xs">TOTAL</span>
                 <span className="text-lg font-bold" data-testid="text-stat-total">{stats?.total || 0}</span>
@@ -393,7 +393,7 @@ export default function Home() {
           <Progress value={progressPercent} className="h-2" />
         </Card>
 
-        <Card className="p-4 flex flex-col justify-center space-y-2 bg-card/50 border-primary/20">
+        <Card className="min-w-0 p-4 flex flex-col justify-center space-y-2 bg-card/50 border-primary/20">
           <div className="text-xs font-mono text-muted-foreground mb-1">JOB_CONTROL</div>
           {!isDownloading ? (
             <Button
@@ -440,14 +440,14 @@ export default function Home() {
       </div>
 
       {/* Data Table */}
-      <div className="border border-border bg-card">
-        <div className="flex items-center justify-between border-b border-border px-4 py-2">
+      <div className="min-w-0 max-w-full border border-border bg-card">
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between border-b border-border px-3 sm:px-4 py-3">
           <span className="text-xs font-mono text-muted-foreground">CURRENT PLAYLIST</span>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <Button
               variant="outline"
               size="sm"
-              className="font-mono text-xs"
+              className="h-11 sm:h-8 font-mono text-xs"
               disabled={!stats?.downloaded}
               onClick={() => window.location.assign(getDownloadAllSongsUrl())}
               title="Save all completed playlist songs together in a ZIP file"
@@ -455,9 +455,9 @@ export default function Home() {
             >
               <Download className="w-3 h-3 mr-1" /> SAVE ZIP ({stats?.downloaded || 0})
             </Button>
-            <ArrowUpDown className="w-3 h-3 text-muted-foreground" />
+            <ArrowUpDown className="hidden sm:block w-3 h-3 shrink-0 text-muted-foreground" />
             <Select value={sort} onValueChange={handleSortChange}>
-              <SelectTrigger className="h-8 w-[180px] font-mono text-xs" data-testid="select-sort">
+              <SelectTrigger className="h-11 sm:h-8 min-w-0 w-full sm:w-[180px] font-mono text-xs" data-testid="select-sort">
                 <SelectValue placeholder="SORT BY" />
               </SelectTrigger>
               <SelectContent>
@@ -468,7 +468,7 @@ export default function Home() {
             </Select>
           </div>
         </div>
-        <Table>
+        <Table className="playlist-table">
           <TableHeader>
             <TableRow className="border-border hover:bg-transparent">
               <TableHead className="w-[60px]"></TableHead>
@@ -501,8 +501,8 @@ export default function Home() {
               </TableRow>
             ) : (
               songs?.map((song) => (
-                <TableRow key={song.id} className="border-border/50 group" data-testid={`row-song-${song.id}`}>
-                  <TableCell>
+                <TableRow key={song.id} className="song-row border-border/50 group" data-testid={`row-song-${song.id}`}>
+                  <TableCell className="song-thumbnail">
                     {song.thumbnailUrl ? (
                       <div className="w-12 h-8 bg-muted overflow-hidden">
                         <img src={song.thumbnailUrl} alt={song.title} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
@@ -513,23 +513,26 @@ export default function Home() {
                       </div>
                     )}
                   </TableCell>
-                  <TableCell className="font-medium max-w-[300px] truncate" title={song.title}>
-                    {song.title}
+                  <TableCell className="song-title font-medium max-w-[300px] truncate" title={song.title}>
+                    <span>{song.title}</span>
+                    <span className="mt-1 block text-xs font-normal text-muted-foreground sm:hidden">
+                      {song.channel} · {formatDuration(song.duration)}
+                    </span>
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-sm max-w-[150px] truncate">
+                  <TableCell className="song-channel text-muted-foreground text-sm max-w-[150px] truncate">
                     {song.channel}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-sm text-muted-foreground">
+                  <TableCell className="song-duration text-right font-mono text-sm text-muted-foreground">
                     {formatDuration(song.duration)}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="song-status">
                     {getStatusBadge(song.status)}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="song-action">
                     <Button
                       variant="outline"
                       size="sm"
-                      className="font-mono text-xs text-primary"
+                      className="h-11 sm:h-8 font-mono text-xs text-primary"
                       disabled={savingSongId === song.id || pendingSongId === song.id || (song.status !== "done" && (jobRunning || startSongDownload.isPending))}
                       onClick={() => {
                         if (song.status === "done") void saveSong(song.id, song.title);
@@ -555,7 +558,7 @@ export default function Home() {
         </Table>
 
         {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-border px-4 py-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-border px-3 sm:px-4 py-3">
             <span className="text-xs font-mono text-muted-foreground" data-testid="text-page-info">
               PAGE {page}/{totalPages} // {totalSongsCount} SONGS
             </span>
