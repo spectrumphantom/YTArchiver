@@ -9,7 +9,7 @@ async function load(source) {
   });
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
 }
-const { collectPlaylist, runDeviceQueue } = await load("../playlist-downloader/src/lib/sequentialDownloads.ts");
+const { collectPlaylist, runDeviceQueue, SongNotReadyError } = await load("../playlist-downloader/src/lib/sequentialDownloads.ts");
 const { describeDownloadError } = await load("src/lib/downloadErrors.ts");
 
 test("bulk snapshot fetches every playlist page and deduplicates video IDs", async () => {
@@ -30,7 +30,7 @@ function fixture(queue) {
     saves, checkpoints,
     io: {
       getSong: async (id) => ({ id, status: id === "bad" ? "error" : "done" }),
-      preparing: async () => true,
+      ensurePreparing: async () => false,
       save: async (id) => { saves.push({ id, time: now }); now += 100; },
       persist: (next) => { checkpoints.push(structuredClone(next)); },
       wait: async (ms) => { now += ms; },
@@ -74,18 +74,73 @@ test("save failure retains the current cursor so resume retries the unsaved file
   assert.deepEqual(checkpoints, []);
 });
 
-test("a pending track waits for preparation; paused preparation preserves progress", async () => {
+test("a pending track waits for preparation and resumes the server job if it stopped", async () => {
   const queue = queueFor(["one"]);
   const { io, saves } = fixture(queue);
   let queries = 0;
-  io.getSong = async () => ({ status: queries++ === 0 ? "pending" : "done" });
+  let resumed = 0;
+  io.getSong = async () => ({ status: queries++ < 2 ? "pending" : "done" });
+  io.ensurePreparing = async () => { resumed++; return true; };
   await runDeviceQueue(queue, io);
   assert.equal(saves.length, 1);
-  const paused = queueFor(["one"]);
-  io.getSong = async () => ({ status: "pending" });
-  io.preparing = async () => false;
-  await assert.rejects(runDeviceQueue(paused, io), /paused or stopped/);
-  assert.equal(paused.cursor, 0);
+  assert.equal(resumed, 2);
+});
+
+test("a song that never becomes ready is counted failed and the queue moves on", async () => {
+  const queue = queueFor(["stuck", "next"]);
+  const { io, saves } = fixture(queue);
+  io.getSong = async (id) => ({ status: id === "stuck" ? "pending" : "done" });
+  io.ensurePreparing = async () => true;
+  await runDeviceQueue(queue, io);
+  assert.deepEqual(saves.map((save) => save.id), ["next"]);
+  assert.equal(queue.failed, 1);
+  assert.equal(queue.cursor, 2);
+});
+
+test("HTTP 404 (song not downloaded yet) automatically resumes the job and retries the same song", async () => {
+  const queue = queueFor(["one", "two"]);
+  const { io, saves, checkpoints } = fixture(queue);
+  let attempts = 0;
+  let resumed = 0;
+  const save = io.save;
+  io.save = async (id, title) => {
+    if (id === "one" && attempts++ < 2) throw new SongNotReadyError();
+    return save(id, title);
+  };
+  io.ensurePreparing = async () => { resumed++; return true; };
+  await runDeviceQueue(queue, io);
+  assert.deepEqual(saves.map((entry) => entry.id), ["one", "two"]);
+  assert.equal(resumed, 2);
+  assert.equal(checkpoints.at(-1).failed, 0);
+  assert.equal(checkpoints.at(-1).cursor, 2);
+});
+
+test("a song that keeps returning 404 is skipped so later pages still download", async () => {
+  const queue = queueFor(["bad", "good"]);
+  const { io, saves } = fixture(queue);
+  const save = io.save;
+  io.save = async (id, title) => {
+    if (id === "bad") throw new SongNotReadyError();
+    return save(id, title);
+  };
+  await runDeviceQueue(queue, io);
+  assert.deepEqual(saves.map((entry) => entry.id), ["good"]);
+  assert.equal(queue.failed, 1);
+});
+
+test("the queue continues across every page of a large playlist", async () => {
+  const ids = Array.from({ length: 120 }, (_, i) => `song${i}`);
+  const items = await collectPlaylist(async (page) => ({
+    songs: ids.slice((page - 1) * 50, page * 50).map((id) => ({ id, title: id })),
+    totalPages: 3,
+  }));
+  assert.equal(items.length, 120);
+  const queue = { ...queueFor([]), items };
+  const { io, saves } = fixture(queue);
+  await runDeviceQueue(queue, io);
+  assert.equal(saves.length, 120);
+  assert.equal(queue.cursor, 120);
+  assert.equal(queue.active, false);
 });
 
 test("YouTube failures explain bot verification, privacy, region, rate limits, and non-YouTube errors", () => {

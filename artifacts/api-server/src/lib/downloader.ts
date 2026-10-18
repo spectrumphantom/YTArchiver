@@ -170,6 +170,73 @@ export async function scrapePlaylist(url: string): Promise<{
   };
 }
 
+/**
+ * Make each song's status match what is really in storage.
+ * - "done" without its audio file  -> pending (will be downloaded again)
+ * - not "done" but audio exists     -> done (e.g. crash after upload)
+ * - stuck "downloading" with no job -> pending
+ * Must only run while no download job is running.
+ */
+export async function reconcileSongStatuses(): Promise<number> {
+  if (jobStatus.running) return 0;
+  const [files] = await objectStorageClient.bucket(getBucketId()).getFiles({ prefix: `${AUDIO_PREFIX}/` });
+  const names = new Set(files.map((file) => file.name));
+  const byId = new Map<string, string>();
+  for (const name of names) {
+    const match = /_\[([^\]]+)\]\.[A-Za-z0-9]+$/.exec(name);
+    if (match) byId.set(match[1], name);
+  }
+  const { result } = await mutateManifest((manifest) => {
+    let fixed = 0;
+    for (const song of Object.values(manifest.songs)) {
+      if (song.status === "done") {
+        if (!song.bucketPath || !names.has(song.bucketPath)) {
+          song.status = "pending";
+          song.bucketPath = null;
+          song.downloadedAt = null;
+          fixed++;
+        }
+        continue;
+      }
+      const existing = byId.get(song.id);
+      if (existing) {
+        song.status = "done";
+        song.bucketPath = existing;
+        song.downloadedAt = song.downloadedAt ?? new Date().toISOString();
+        song.errorReason = null;
+        song.errorDetails = null;
+        fixed++;
+      } else if (song.status === "downloading") {
+        song.status = "pending";
+        fixed++;
+      }
+    }
+    return fixed;
+  });
+  if (result > 0) logger.info({ fixed: result }, "Corrected song statuses to match storage");
+  return result;
+}
+
+/** Stop any running download and remove the current playlist from the list. */
+export async function clearPlaylist(): Promise<void> {
+  stopRequested = true;
+  currentAbort?.abort();
+  for (let i = 0; jobStatus.running && i < 300; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (jobStatus.running) throw new Error("The running download did not stop in time. Try again.");
+  await mutateManifest((manifest) => {
+    manifest.playlistSongIds = [];
+    manifest.playlistTitle = "";
+    delete manifest.playlistUrl;
+    delete manifest.downloadJob;
+    for (const song of Object.values(manifest.songs)) {
+      if (song.status === "downloading") song.status = "pending";
+    }
+  });
+  jobStatus = { running: false, state: "idle", currentSong: null, pending: 0, completed: 0, failed: 0 };
+}
+
 // null = yt-dlp's default clients.
 const FALLBACK_CLIENTS: (string | null)[] = [null, "web_embedded", "tv_simply", "android"];
 
@@ -267,6 +334,7 @@ export async function startDownloadJob(songIds?: string[], restore = false): Pro
   let saved: SavedDownloadJob;
   let pending: Song[];
   try {
+    await reconcileSongStatuses();
     const { result } = await mutateManifest((manifest) => {
       const previous = manifest.downloadJob;
       const resume = !songIds && previous && (restore || previous.state === "paused");
@@ -352,6 +420,11 @@ export async function startDownloadJob(songIds?: string[], restore = false): Pro
 }
 
 export async function recoverDownloadJob(): Promise<void> {
+  try {
+    await reconcileSongStatuses();
+  } catch (err) {
+    logger.error({ err }, "Could not verify song statuses against storage at startup");
+  }
   const manifest = await readManifest();
   const saved = manifest.downloadJob;
   if (!saved) return;

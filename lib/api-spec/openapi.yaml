@@ -32,6 +32,26 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
 
+  /playlist:
+    delete:
+      operationId: clearPlaylist
+      tags: [playlist]
+      summary: Clear the current playlist
+      description: Stops any running download and removes the current playlist from the list. Downloaded audio files stay in storage.
+      responses:
+        "200":
+          description: Playlist cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DownloadJobStatus"
+        "500":
+          description: Playlist could not be cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /playlist/scrape:
     post:
       operationId: scrapePlaylist

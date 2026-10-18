@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { downloadSong, getSong, getDownloadStatus } from "@workspace/api-client-react";
-import { runDeviceQueue, type DeviceQueue } from "@/lib/sequentialDownloads";
+import { downloadSong, getSong, getDownloadStatus, startDownloads } from "@workspace/api-client-react";
+import { runDeviceQueue, SongNotReadyError, type DeviceQueue } from "@/lib/sequentialDownloads";
 
 export async function saveAudioFile(id: string, title: string, signal?: AbortSignal) {
   const blob = await downloadSong(id, { signal });
@@ -77,10 +77,33 @@ export function useDeviceDownloads(userId: string | undefined) {
         }
       }
     };
+    // Automatically resume the server-side download job when it is not running.
+    const ensurePreparing = async (): Promise<boolean> => {
+      const isRunning = () => reconnect(async () => (await getDownloadStatus({ signal })).running);
+      if (await isRunning()) return false;
+      const rejected = await reconnect(async () => {
+        try {
+          await startDownloads({ signal });
+          return null;
+        } catch (err) {
+          if ((err as { status?: number }).status === undefined) throw err; // network failure: retry
+          return err as Error;
+        }
+      });
+      if (rejected && !(await isRunning())) throw rejected;
+      return !rejected;
+    };
     void runDeviceQueue(current, {
       getSong: (id) => reconnect(() => getSong(id, { signal })),
-      preparing: () => reconnect(async () => (await getDownloadStatus({ signal })).running),
-      save: (id, title) => saveAudioFile(id, title, signal),
+      ensurePreparing,
+      save: async (id, title) => {
+        try {
+          await saveAudioFile(id, title, signal);
+        } catch (err) {
+          if ((err as { status?: number }).status === 404) throw new SongNotReadyError();
+          throw err;
+        }
+      },
       persist,
       wait,
       now: Date.now,

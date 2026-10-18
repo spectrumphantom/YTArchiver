@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Play, Download, Square, Pause, CheckCircle, Clock, AlertCircle, Loader2, RefreshCw, ChevronLeft, ChevronRight, ArrowUpDown, LogOut, User } from "lucide-react";
+import { Play, Trash2, Download, Square, Pause, CheckCircle, Clock, AlertCircle, Loader2, RefreshCw, ChevronLeft, ChevronRight, ArrowUpDown, LogOut, User } from "lucide-react";
 import { useUser, useClerk } from "@clerk/react";
 import { Link } from "wouter";
 import {
@@ -15,6 +15,7 @@ import {
   useStopDownloads,
   usePauseDownloads,
   useStartSongDownload,
+  useClearPlaylist,
   getSongs,
   getSong,
   type GetSongsSort,
@@ -100,6 +101,20 @@ export default function Home() {
     },
   });
 
+  // Keep the table on the page of the song currently being processed.
+  const followedPage = useRef(0);
+  useEffect(() => {
+    if (!device.queue?.active || sort !== "added") {
+      followedPage.current = 0;
+      return;
+    }
+    const target = Math.floor(device.queue.cursor / PAGE_SIZE) + 1;
+    if (target !== followedPage.current) {
+      followedPage.current = target;
+      setPage(target);
+    }
+  }, [device.queue?.cursor, device.queue?.active, sort]);
+
   const refreshSongs = () => {
     void queryClient.invalidateQueries({ queryKey: getGetSongsQueryKey() });
     void queryClient.invalidateQueries({ queryKey: getGetSongStatsQueryKey() });
@@ -184,6 +199,21 @@ export default function Home() {
     },
   });
 
+  const clearPlaylist = useClearPlaylist({
+    mutation: {
+      onSuccess: (data) => {
+        queryClient.setQueryData(getGetDownloadStatusQueryKey(), data);
+        scrapePlaylist.reset();
+        setPage(1);
+        setUrl("");
+        setPendingSongId(null);
+        refreshSongs();
+        toast({ title: "Playlist Cleared", description: "The playlist was removed. Downloaded MP3s stay in storage." });
+      },
+      onError: (err) => toast({ title: "Could Not Clear Playlist", description: err.data?.error || err.message, variant: "destructive" }),
+    },
+  });
+
   const stopDownloads = useStopDownloads({
     mutation: {
       onSuccess: () => {
@@ -231,6 +261,12 @@ export default function Home() {
     } finally {
       setStartingAll(false);
     }
+  };
+  const handleClearPlaylist = () => {
+    if (!window.confirm("Clear the current playlist? This stops any running downloads and removes the songs from the list. Downloaded MP3s stay in storage.")) return;
+    // Clear the browser queue first so it cannot restart the server download.
+    device.clear();
+    clearPlaylist.mutate();
   };
   const handleStop = () => {
     device.clear();
@@ -436,7 +472,7 @@ export default function Home() {
             </div>
           )}
           {!isDownloading && (unfinishedDeviceQueue || jobState === "paused") && (
-            <Button variant="outline" className="font-mono" onClick={handleStop}>STOP / CLEAR QUEUE</Button>
+            <Button variant="outline" className="font-mono" onClick={handleStop}>CANCEL REMAINING DOWNLOADS</Button>
           )}
         </Card>
       </div>
@@ -457,6 +493,17 @@ export default function Home() {
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between border-b border-border px-3 sm:px-4 py-3">
           <span className="text-xs font-mono text-muted-foreground">CURRENT PLAYLIST</span>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-11 sm:h-8 font-mono text-xs"
+              disabled={clearPlaylist.isPending || scrapePlaylist.isPending || (!stats?.total && !device.queue)}
+              onClick={handleClearPlaylist}
+              title="Remove the current playlist and stop downloads"
+              data-testid="button-clear-playlist"
+            >
+              <Trash2 className="w-3 h-3 mr-1" /> CLEAR PLAYLIST
+            </Button>
             <ArrowUpDown className="hidden sm:block w-3 h-3 shrink-0 text-muted-foreground" />
             <Select value={sort} onValueChange={handleSortChange}>
               <SelectTrigger className="h-11 sm:h-8 min-w-0 w-full sm:w-[180px] font-mono text-xs" data-testid="select-sort">

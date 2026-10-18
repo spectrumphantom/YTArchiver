@@ -137,6 +137,78 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
 
 
+export const getClearPlaylistUrl = () => {
+
+
+
+
+  return `/api/playlist`
+}
+
+/**
+ * Stops any running download and removes the current playlist from the list. Downloaded audio files stay in storage.
+ * @summary Clear the current playlist
+ */
+export const clearPlaylist = async ( options?: RequestInit): Promise<DownloadJobStatus> => {
+
+  return customFetch<DownloadJobStatus>(getClearPlaylistUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getClearPlaylistMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearPlaylist>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof clearPlaylist>>, TError,void, TContext> => {
+
+const mutationKey = ['clearPlaylist'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearPlaylist>>, void> = () => {
+
+
+          return  clearPlaylist(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClearPlaylistMutationResult = NonNullable<Awaited<ReturnType<typeof clearPlaylist>>>
+
+    export type ClearPlaylistMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Clear the current playlist
+ */
+export const useClearPlaylist = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearPlaylist>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof clearPlaylist>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getClearPlaylistMutationOptions(options));
+    }
+
 export const getScrapePlaylistUrl = () => {
 
 

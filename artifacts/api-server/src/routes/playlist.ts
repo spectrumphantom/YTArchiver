@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { scrapePlaylist } from "../lib/downloader";
+import { scrapePlaylist, clearPlaylist, getJobStatus } from "../lib/downloader";
 import { z } from "zod";
 
 const router = Router();
@@ -29,6 +29,16 @@ function isValidYouTubeUrl(raw: string): boolean {
   }
   return ALLOWED_HOSTS.has(parsed.hostname.toLowerCase());
 }
+
+router.delete("/playlist", async (req, res) => {
+  try {
+    await clearPlaylist();
+    res.json(getJobStatus());
+  } catch (err) {
+    req.log.error({ err }, "Failed to clear playlist");
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to clear playlist" });
+  }
+});
 
 router.post("/playlist/scrape", async (req, res) => {
   const parsed = ScrapeInputSchema.safeParse(req.body);

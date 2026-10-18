@@ -6,3 +6,4 @@ description: No Python in env; object storage requires Replit sidecar auth, not 
   **Why:** python-dependent yt-dlp builds fail; `yt-dlp-wrap` npm package has ESM/CJS interop bugs.
 - Any GCS access to the Replit object storage bucket MUST use the sidecar-authenticated client (external_account creds via `http://127.0.0.1:1106`), never plain `new Storage()` — that fails with "Could not load the default credentials".
 - Concurrent JSON-in-bucket state (e.g. a manifest) needs compare-and-swap via GCS generation preconditions (`ifGenerationMatch` + retry on 412), or concurrent writers silently lose updates.
+- Dev and the published app share the SAME bucket manifest. A running published instance with old code can run its own download job and fight the dev one (manifest write conflicts, stale statuses). After server-side download changes, tell the user to republish.

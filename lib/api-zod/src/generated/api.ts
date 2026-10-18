@@ -18,6 +18,20 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * Stops any running download and removes the current playlist from the list. Downloaded audio files stay in storage.
+ * @summary Clear the current playlist
+ */
+export const ClearPlaylistResponse = zod.object({
+  "running": zod.boolean(),
+  "state": zod.enum(['idle', 'running', 'paused']),
+  "currentSong": zod.string().nullish(),
+  "pending": zod.number(),
+  "completed": zod.number(),
+  "failed": zod.number()
+})
+
+
+/**
  * Uses yt-dlp to extract all song metadata from a playlist URL
  * @summary Scrape all songs from a YouTube playlist
  */

@@ -16,6 +16,7 @@ const state = {
   active: 0,
   maxActive: 0,
   failId: null,
+  uploaded: new Set(),
 };
 globalThis.__playlistTest = state;
 state.storage = {
@@ -31,7 +32,12 @@ state.storage = {
       exists: async () => [true],
       createReadStream: () => Readable.from([Buffer.from(`audio:${name}`)]),
     }),
-    upload: async () => {},
+    upload: async (_path, options) => { state.uploaded.add(options.destination); },
+    getFiles: async () => [[
+      ...Object.values(state.manifest.songs).filter((item) => item.status === "done" && item.bucketPath).map((item) => item.bucketPath),
+      ...state.uploaded,
+      ...(state.extraFiles ?? []),
+    ].filter((name) => !state.hidden?.has(name)).map((name) => ({ name }))],
   }),
 };
 state.runYtDlp = async (args) => {
@@ -133,6 +139,7 @@ test("one-song download only processes its chosen track", async () => {
 });
 
 test("a failed track does not stop the rest of the queue", async () => {
+  state.uploaded.clear();
   state.manifest.songs.a.status = "pending";
   state.manifest.songs.b.status = "pending";
   state.failId = "a";
@@ -149,6 +156,7 @@ test("a failed track does not stop the rest of the queue", async () => {
 });
 
 test("a running queue restores after process restart, skipping already uploaded songs", async () => {
+  state.uploaded.clear();
   state.manifest = {
     songs: { a: song("a", "done"), b: song("b", "downloading") },
     playlistSongIds: ["a", "b"],
@@ -164,6 +172,7 @@ test("a running queue restores after process restart, skipping already uploaded 
 });
 
 test("paused work stays paused after restart, resumes on request, and Stop persists even while paused", async () => {
+  state.uploaded.clear();
   state.manifest = {
     songs: { a: song("a"), b: song("b") },
     playlistSongIds: ["a", "b"],
@@ -274,4 +283,70 @@ test("Save ZIP includes completed current tracks only and individual downloads s
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test("statuses are corrected to match what is really in storage", async () => {
+  state.manifest = {
+    songs: {
+      lost: { ...song("lost", "done"), bucketPath: "lost.mp3" },
+      kept: { ...song("kept", "done"), bucketPath: "kept.mp3" },
+      orphan: song("orphan", "error"),
+      stuck: song("stuck", "downloading"),
+    },
+    playlistSongIds: ["lost", "kept", "orphan", "stuck"],
+  };
+  state.hidden = new Set(["lost.mp3"]);
+  state.extraFiles = ["playlist-downloader/audio/orphan_[orphan].mp3"];
+  const fixed = await downloader.reconcileSongStatuses();
+  state.hidden = null;
+  state.extraFiles = null;
+  assert.equal(fixed, 3);
+  assert.equal(state.manifest.songs.lost.status, "pending");
+  assert.equal(state.manifest.songs.lost.bucketPath, null);
+  assert.equal(state.manifest.songs.kept.status, "done");
+  assert.equal(state.manifest.songs.orphan.status, "done");
+  assert.equal(state.manifest.songs.orphan.bucketPath, "playlist-downloader/audio/orphan_[orphan].mp3");
+  assert.equal(state.manifest.songs.stuck.status, "pending");
+});
+
+test("a download job re-downloads a song whose audio file went missing", async () => {
+  state.manifest = {
+    songs: { gone: { ...song("gone", "done"), bucketPath: "gone.mp3" } },
+    playlistSongIds: ["gone"],
+  };
+  state.hidden = new Set(["gone.mp3"]);
+  state.calls = [];
+  await downloader.startDownloadJob();
+  await finishJob();
+  state.hidden = null;
+  assert.deepEqual(state.calls, ["gone"]);
+  assert.equal(state.manifest.songs.gone.status, "done");
+});
+
+test("clearing the playlist empties the list, drops the saved queue, and keeps song records", async () => {
+  state.manifest = {
+    songs: { a: song("a"), b: song("b", "downloading") },
+    playlistSongIds: ["a", "b"],
+    playlistTitle: "Old",
+    playlistUrl: "https://youtube.com/playlist?list=x",
+    downloadJob: { id: "j", state: "paused", remainingIds: ["a", "b"], completed: 0, failed: 0 },
+  };
+  await downloader.clearPlaylist();
+  assert.deepEqual(state.manifest.playlistSongIds, []);
+  assert.equal(state.manifest.downloadJob, undefined);
+  assert.equal(state.manifest.playlistUrl, undefined);
+  assert.equal(state.manifest.songs.b.status, "pending");
+  assert.ok(state.manifest.songs.a, "song records stay so downloaded audio is remembered");
+  assert.equal(downloader.getJobStatus().state, "idle");
+});
+
+test("clearing the playlist stops a running download first", async () => {
+  const ids = Array.from({ length: 5 }, (_, i) => `r${i}`);
+  state.manifest = { songs: Object.fromEntries(ids.map((id) => [id, song(id)])), playlistSongIds: ids };
+  state.calls = [];
+  await downloader.startDownloadJob();
+  await downloader.clearPlaylist();
+  assert.equal(downloader.getJobStatus().running, false);
+  assert.deepEqual(state.manifest.playlistSongIds, []);
+  assert.equal(state.manifest.downloadJob, undefined);
 });
