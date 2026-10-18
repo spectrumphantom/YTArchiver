@@ -442,7 +442,6 @@ export default function Home() {
       </div>
 
       <div className="space-y-2 text-xs font-mono text-muted-foreground" role="status">
-        <p>Download All saves separate MP3 files, 3 seconds apart, across all playlist pages. Allow multiple downloads in your browser. Keep this tab open for device saves; saved progress resumes when you return on this browser.</p>
         {device.queue && (
           <p data-testid="device-download-progress">
             DEVICE QUEUE: {device.queue.cursor}/{device.queue.items.length} processed
