@@ -293,6 +293,83 @@ export function useGetSongs<TData = Awaited<ReturnType<typeof getSongs>>, TError
 
 
 
+export const getDownloadAllSongsUrl = () => {
+
+
+
+
+  return `/api/songs/download-all`
+}
+
+/**
+ * @summary Save all completed songs from the current playlist as a ZIP
+ */
+export const downloadAllSongs = async ( options?: RequestInit): Promise<Blob> => {
+
+  return customFetch<Blob>(getDownloadAllSongsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getDownloadAllSongsQueryKey = () => {
+    return [
+    `/api/songs/download-all`
+    ] as const;
+    }
+
+
+export const getDownloadAllSongsQueryOptions = <TData = Awaited<ReturnType<typeof downloadAllSongs>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadAllSongs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getDownloadAllSongsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof downloadAllSongs>>> = ({ signal }) => downloadAllSongs({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof downloadAllSongs>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type DownloadAllSongsQueryResult = NonNullable<Awaited<ReturnType<typeof downloadAllSongs>>>
+export type DownloadAllSongsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Save all completed songs from the current playlist as a ZIP
+ */
+
+export function useDownloadAllSongs<TData = Awaited<ReturnType<typeof downloadAllSongs>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadAllSongs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getDownloadAllSongsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getDownloadSongUrl = (id: string,) => {
 
 
@@ -518,6 +595,77 @@ export const useStartDownloads = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getStartDownloadsMutationOptions(options));
+    }
+
+export const getStartSongDownloadUrl = (id: string,) => {
+
+
+
+
+  return `/api/downloads/song/${id}`
+}
+
+/**
+ * @summary Download one song to the archive
+ */
+export const startSongDownload = async (id: string, options?: RequestInit): Promise<DownloadJobStatus> => {
+
+  return customFetch<DownloadJobStatus>(getStartSongDownloadUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getStartSongDownloadMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startSongDownload>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startSongDownload>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['startSongDownload'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startSongDownload>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  startSongDownload(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartSongDownloadMutationResult = NonNullable<Awaited<ReturnType<typeof startSongDownload>>>
+
+    export type StartSongDownloadMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Download one song to the archive
+ */
+export const useStartSongDownload = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startSongDownload>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof startSongDownload>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getStartSongDownloadMutationOptions(options));
     }
 
 export const getGetDownloadStatusUrl = () => {

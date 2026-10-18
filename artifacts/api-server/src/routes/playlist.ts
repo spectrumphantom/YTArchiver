@@ -5,7 +5,7 @@ import { z } from "zod";
 const router = Router();
 
 const ScrapeInputSchema = z.object({
-  url: z.string().min(1),
+  url: z.string().trim().min(1),
 });
 
 const ALLOWED_HOSTS = new Set([

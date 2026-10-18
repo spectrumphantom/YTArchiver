@@ -16,7 +16,15 @@ export interface Song {
 export interface Manifest {
   songs: Record<string, Song>;
   playlistTitle: string;
+  playlistSongIds?: string[];
+  playlistUrl?: string;
   lastUpdated: string;
+}
+
+export function getPlaylistSongs(manifest: Manifest): Song[] {
+  return manifest.playlistSongIds
+    ? manifest.playlistSongIds.map((id) => manifest.songs[id]).filter((song): song is Song => Boolean(song))
+    : Object.values(manifest.songs);
 }
 
 const MANIFEST_PATH = "playlist-downloader/manifest.json";
@@ -78,8 +86,8 @@ export async function readManifest(): Promise<Manifest> {
     const { manifest } = await readManifestWithGeneration();
     return manifest;
   } catch (err) {
-    logger.error({ err }, "Failed to read manifest, returning empty");
-    return emptyManifest();
+    logger.error({ err }, "Failed to read manifest");
+    throw err;
   }
 }
 

@@ -102,6 +102,26 @@ paths:
               schema:
                 $ref: "#/components/schemas/SongPage"
 
+  /songs/download-all:
+    get:
+      operationId: downloadAllSongs
+      tags: [songs]
+      summary: Save all completed songs from the current playlist as a ZIP
+      responses:
+        "200":
+          description: ZIP containing the completed playlist tracks
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: No completed songs are available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /songs/{id}/download:
     get:
       operationId: downloadSong
@@ -155,6 +175,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DownloadJobStatus"
+
+  /downloads/song/{id}:
+    post:
+      operationId: startSongDownload
+      tags: [downloads]
+      summary: Download one song to the archive
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Song download started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DownloadJobStatus"
+        "404":
+          description: Song not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Another download is already running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /downloads/status:
     get:

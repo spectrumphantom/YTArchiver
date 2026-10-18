@@ -81,6 +81,12 @@ export const GetSongsResponse = zod.object({
 
 
 /**
+ * @summary Save all completed songs from the current playlist as a ZIP
+ */
+export const DownloadAllSongsResponse = zod.unknown()
+
+
+/**
  * @summary Download a song's audio file
  */
 export const DownloadSongParams = zod.object({
@@ -108,6 +114,23 @@ export const GetSongStatsResponse = zod.object({
  * @summary Start downloading all pending songs
  */
 export const StartDownloadsResponse = zod.object({
+  "running": zod.boolean(),
+  "state": zod.enum(['idle', 'running', 'paused']),
+  "currentSong": zod.string().nullish(),
+  "pending": zod.number(),
+  "completed": zod.number(),
+  "failed": zod.number()
+})
+
+
+/**
+ * @summary Download one song to the archive
+ */
+export const StartSongDownloadParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const StartSongDownloadResponse = zod.object({
   "running": zod.boolean(),
   "state": zod.enum(['idle', 'running', 'paused']),
   "currentSong": zod.string().nullish(),

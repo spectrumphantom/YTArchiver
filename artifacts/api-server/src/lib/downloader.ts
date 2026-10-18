@@ -2,7 +2,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import os from "os";
 import { objectStorageClient } from "./objectStorage";
-import { readManifest, mutateManifest, updateSong, type Song } from "./manifest";
+import { readManifest, mutateManifest, updateSong, getPlaylistSongs, type Song } from "./manifest";
 import { runYtDlp } from "./ytdlp";
 import { logger } from "./logger";
 
@@ -99,11 +99,14 @@ export async function scrapePlaylist(url: string): Promise<{
     let newAdded = 0;
     let alreadyExists = 0;
     let playlistTitle = "";
+    const playlistSongIds: string[] = [];
 
     for (const line of lines) {
       const parts = line.split("\t");
       const [id, title, channel, durationStr, thumbnailUrl, plTitle] = parts;
       if (!id || !title || title === "[Private video]" || title === "[Deleted video]") continue;
+      if (playlistSongIds.includes(id)) continue;
+      playlistSongIds.push(id);
 
       if (!playlistTitle && plTitle && plTitle !== "NA" && plTitle !== "None") {
         playlistTitle = plTitle;
@@ -111,6 +114,12 @@ export async function scrapePlaylist(url: string): Promise<{
 
       if (manifest.songs[id]) {
         alreadyExists++;
+        const existing = manifest.songs[id];
+        existing.title = title;
+        if (channel && channel !== "NA" && channel !== "None") existing.channel = channel;
+        const duration = Math.round(parseFloat(durationStr || "0")) || 0;
+        if (duration > 0) existing.duration = duration;
+        if (thumbnailUrl && thumbnailUrl !== "NA" && thumbnailUrl !== "None") existing.thumbnailUrl = thumbnailUrl;
         continue;
       }
 
@@ -133,7 +142,10 @@ export async function scrapePlaylist(url: string): Promise<{
       newAdded++;
     }
 
-    if (playlistTitle) manifest.playlistTitle = playlistTitle;
+    if (playlistSongIds.length === 0) throw new Error("No playable videos were found in this playlist.");
+    manifest.playlistTitle = playlistTitle || "YouTube Playlist";
+    manifest.playlistSongIds = playlistSongIds;
+    manifest.playlistUrl = url;
     return { newAdded, alreadyExists };
   });
 
@@ -142,7 +154,7 @@ export async function scrapePlaylist(url: string): Promise<{
     newAdded: result.newAdded,
     alreadyExists: result.alreadyExists,
     playlistTitle: manifest.playlistTitle || "YouTube Playlist",
-    songs: Object.values(manifest.songs),
+    songs: getPlaylistSongs(manifest),
   };
 }
 
@@ -212,8 +224,15 @@ async function downloadSingleSong(song: Song, signal?: AbortSignal): Promise<voi
   }
 }
 
-export async function startDownloadJob(): Promise<void> {
-  if (jobStatus.running) return;
+export async function startDownloadJob(songIds?: string[]): Promise<void> {
+  if (jobStatus.running) throw new Error("A download is already running. Pause or stop it before starting another.");
+
+  const manifest = await readManifest();
+  const songs = songIds
+    ? songIds.map((id) => manifest.songs[id]).filter((song): song is Song => Boolean(song))
+    : getPlaylistSongs(manifest);
+  const pending = songs.filter((song) => song.status !== "done");
+  if (jobStatus.running) throw new Error("A download is already running.");
 
   stopRequested = false;
   pauseRequested = false;
@@ -221,20 +240,13 @@ export async function startDownloadJob(): Promise<void> {
     running: true,
     state: "running",
     currentSong: null,
-    pending: 0,
+    pending: pending.length,
     completed: 0,
     failed: 0,
   };
 
   (async () => {
     try {
-      const manifest = await readManifest();
-      const pending = Object.values(manifest.songs)
-        .filter((s) => s.status === "pending" || s.status === "downloading" || s.status === "error")
-        .sort((a, b) => new Date(a.addedAt).getTime() - new Date(b.addedAt).getTime());
-
-      jobStatus.pending = pending.length;
-
       for (const song of pending) {
         if (stopRequested || pauseRequested) break;
         jobStatus.currentSong = song.title;

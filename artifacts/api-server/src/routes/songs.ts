@@ -1,6 +1,7 @@
 import { Router } from "express";
 import path from "path";
-import { readManifest } from "../lib/manifest";
+import { ZipArchive } from "archiver";
+import { readManifest, getPlaylistSongs } from "../lib/manifest";
 import { objectStorageClient } from "../lib/objectStorage";
 
 const router = Router();
@@ -25,7 +26,7 @@ router.get("/songs", async (req, res) => {
       : "added";
 
     const manifest = await readManifest();
-    const all = Object.values(manifest.songs).sort((a, b) => {
+    const all = getPlaylistSongs(manifest).sort((a, b) => {
       switch (sort) {
         case "title":
           return a.title.localeCompare(b.title, undefined, {
@@ -44,7 +45,7 @@ router.get("/songs", async (req, res) => {
             })
           );
         default:
-          return new Date(a.addedAt).getTime() - new Date(b.addedAt).getTime();
+          return 0; // Preserve the latest playlist's track order.
       }
     });
 
@@ -63,7 +64,7 @@ router.get("/songs", async (req, res) => {
 router.get("/songs/stats", async (req, res) => {
   try {
     const manifest = await readManifest();
-    const songs = Object.values(manifest.songs);
+    const songs = getPlaylistSongs(manifest);
     const stats = {
       total: songs.length,
       downloaded: songs.filter((s) => s.status === "done").length,
@@ -75,6 +76,44 @@ router.get("/songs/stats", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Failed to get stats");
     res.status(500).json({ error: "Failed to get stats" });
+  }
+});
+
+router.get("/songs/download-all", async (req, res) => {
+  try {
+    const manifest = await readManifest();
+    const songs = getPlaylistSongs(manifest).filter((song) => song.status === "done" && song.bucketPath);
+    if (songs.length === 0) {
+      res.status(404).json({ error: "No completed songs are available. Download the playlist first." });
+      return;
+    }
+    const bucket = objectStorageClient.bucket(getBucketId());
+    const archive = new ZipArchive({ store: true });
+    archive.on("error", (err) => {
+      req.log.error({ err }, "Failed to stream playlist archive");
+      res.destroy(err);
+    });
+    res.on("close", () => {
+      if (!res.writableFinished) archive.abort();
+    });
+    res.attachment("playlist-songs.zip");
+    res.setHeader("Content-Type", "application/zip");
+    archive.pipe(res);
+    for (const song of songs) {
+      const filename = `${song.title.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").slice(0, 100)}_[${song.id}]${path.extname(song.bucketPath!) || ".mp3"}`;
+      const source = bucket.file(song.bucketPath!).createReadStream();
+      source.on("error", (err) => {
+        req.log.error({ err, id: song.id }, "Failed to read archived song");
+        archive.abort();
+        res.destroy(err);
+      });
+      archive.append(source, { name: filename });
+    }
+    await archive.finalize();
+  } catch (err) {
+    req.log.error({ err }, "Failed to download playlist");
+    if (res.headersSent) res.destroy(err instanceof Error ? err : undefined);
+    else res.status(500).json({ error: "Failed to create playlist ZIP" });
   }
 });
 
@@ -104,17 +143,24 @@ router.get("/songs/:id/download", async (req, res) => {
 
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+      `attachment; filename="${filename.replace(/[^\x20-\x7e]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(filename)}`
     );
     res.setHeader(
       "Content-Type",
       ext === ".mp3" ? "audio/mpeg" : "audio/mp4"
     );
 
-    file.createReadStream().pipe(res);
+    const source = file.createReadStream();
+    source.on("error", (err) => {
+      req.log.error({ err, id: song.id }, "Failed to stream song");
+      res.destroy(err);
+    });
+    res.on("close", () => source.destroy());
+    source.pipe(res);
   } catch (err) {
     req.log.error({ err, id: req.params.id }, "Failed to download song");
-    res.status(500).json({ error: "Failed to stream audio file" });
+    if (res.headersSent) res.destroy(err instanceof Error ? err : undefined);
+    else res.status(500).json({ error: "Failed to stream audio file" });
   }
 });
 
