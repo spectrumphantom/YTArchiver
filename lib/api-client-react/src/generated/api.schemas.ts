@@ -76,9 +76,13 @@ export interface ScrapeResult {
 
 export interface SongStats {
   total: number;
+  /** Songs whose saved audio is available in storage */
   downloaded: number;
+  /** All unfinished songs, including active downloads and failed attempts */
   pending: number;
+  /** Pending songs currently being downloaded */
   downloading: number;
+  /** Pending songs whose last attempt failed */
   error: number;
 }
 

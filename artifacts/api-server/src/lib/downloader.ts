@@ -2,7 +2,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import os from "os";
 import { objectStorageClient } from "./objectStorage";
-import { readManifest, mutateManifest, updateSong, getPlaylistSongs, type Song } from "./manifest";
+import { readManifest, mutateManifest, updateSong, getPlaylistSongs, type Song, type Manifest } from "./manifest";
 import { runYtDlp } from "./ytdlp";
 import { logger } from "./logger";
 import { randomUUID } from "node:crypto";
@@ -175,46 +175,69 @@ export async function scrapePlaylist(url: string): Promise<{
  * - "done" without its audio file  -> pending (will be downloaded again)
  * - not "done" but audio exists     -> done (e.g. crash after upload)
  * - stuck "downloading" with no job -> pending
- * Must only run while no download job is running.
+ * Active downloads are preserved; a finished upload wins over an older status.
  */
 export async function reconcileSongStatuses(): Promise<number> {
-  if (jobStatus.running) return 0;
+  const scanStartedAt = Date.now();
   const [files] = await objectStorageClient.bucket(getBucketId()).getFiles({ prefix: `${AUDIO_PREFIX}/` });
-  const names = new Set(files.map((file) => file.name));
+  const names = new Set(files
+    .filter((file) => /\.(mp3|m4a|opus|webm)$/i.test(file.name) && Number(file.metadata.size) > 0)
+    .map((file) => file.name));
   const byId = new Map<string, string>();
   for (const name of names) {
     const match = /_\[([^\]]+)\]\.[A-Za-z0-9]+$/.exec(name);
     if (match) byId.set(match[1], name);
   }
-  const { result } = await mutateManifest((manifest) => {
+  const reconcile = (manifest: Manifest) => {
     let fixed = 0;
+    const activeIds = new Set(manifest.downloadJob?.state === "running" ? manifest.downloadJob.remainingIds : []);
     for (const song of Object.values(manifest.songs)) {
-      if (song.status === "done") {
-        if (!song.bucketPath || !names.has(song.bucketPath)) {
-          song.status = "pending";
-          song.bucketPath = null;
-          song.downloadedAt = null;
+      // The listing may predate a concurrent upload. Never undo its new status.
+      if (song.downloadedAt && Date.parse(song.downloadedAt) >= scanStartedAt) continue;
+      const existing = song.bucketPath && names.has(song.bucketPath)
+        ? song.bucketPath
+        : byId.get(song.id);
+      if (existing) {
+        if (song.status !== "done" || song.bucketPath !== existing || !song.downloadedAt || song.errorReason || song.errorDetails) {
+          song.status = "done";
+          song.bucketPath = existing;
+          song.downloadedAt = song.downloadedAt ?? new Date().toISOString();
+          song.errorReason = null;
+          song.errorDetails = null;
           fixed++;
         }
-        continue;
-      }
-      const existing = byId.get(song.id);
-      if (existing) {
-        song.status = "done";
-        song.bucketPath = existing;
-        song.downloadedAt = song.downloadedAt ?? new Date().toISOString();
-        song.errorReason = null;
-        song.errorDetails = null;
-        fixed++;
-      } else if (song.status === "downloading") {
+      } else if (song.status === "done" || (song.status === "downloading" && !activeIds.has(song.id))) {
         song.status = "pending";
+        song.bucketPath = null;
+        song.downloadedAt = null;
+        fixed++;
+      } else if (song.bucketPath || song.downloadedAt) {
+        // Incomplete/error records must not retain metadata claiming completion.
+        song.bucketPath = null;
+        song.downloadedAt = null;
         fixed++;
       }
     }
     return fixed;
-  });
+  };
+  // Avoid rewriting the entire shared manifest when nothing needs correcting.
+  if (reconcile(await readManifest()) === 0) return 0;
+  const { result } = await mutateManifest(reconcile);
   if (result > 0) logger.info({ fixed: result }, "Corrected song statuses to match storage");
   return result;
+}
+
+let statusRefresh: Promise<void> | null = null;
+let lastStatusRefresh = 0;
+
+/** Keep list/detail/stats responses verified without listing storage per song. */
+export async function refreshSongStatuses(): Promise<void> {
+  if (statusRefresh) return statusRefresh;
+  if (Date.now() - lastStatusRefresh < 5000) return;
+  statusRefresh = reconcileSongStatuses()
+    .then(() => { lastStatusRefresh = Date.now(); })
+    .finally(() => { statusRefresh = null; });
+  return statusRefresh;
 }
 
 /** Stop any running download and remove the current playlist from the list. */
@@ -296,6 +319,8 @@ async function downloadSingleSong(song: Song, signal?: AbortSignal): Promise<voi
     if (!audioFile) throw new Error("No audio file produced");
 
     const localPath = path.join(tmpDir, audioFile);
+    const { size } = await fs.stat(localPath);
+    if (size === 0) throw new Error("The audio file is empty; the song is not finished.");
     const ext = path.extname(audioFile);
     const safeName = sanitizeFilename(song.title);
     const bucketPath = `${AUDIO_PREFIX}/${safeName}_[${song.id}]${ext}`;
@@ -310,15 +335,17 @@ async function downloadSingleSong(song: Song, signal?: AbortSignal): Promise<voi
       status: "done",
       bucketPath,
       downloadedAt: new Date().toISOString(),
+      errorReason: null,
+      errorDetails: null,
     });
     logger.info({ id: song.id, title: song.title }, "Song downloaded");
   } catch (err) {
     if (isAbortError(err)) {
       logger.info({ id: song.id }, "Download aborted, resetting to pending");
-      await updateSong(song.id, { status: "pending" });
+      await updateSong(song.id, { status: "pending", bucketPath: null, downloadedAt: null });
     } else {
       logger.error({ err, id: song.id }, "Failed to download song");
-      await updateSong(song.id, { status: "error", ...describeDownloadError(err) });
+      await updateSong(song.id, { status: "error", bucketPath: null, downloadedAt: null, ...describeDownloadError(err) });
     }
     throw err;
   } finally {
