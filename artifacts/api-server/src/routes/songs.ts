@@ -117,6 +117,20 @@ router.get("/songs/download-all", async (req, res) => {
   }
 });
 
+router.get("/songs/:id", async (req, res) => {
+  try {
+    const song = (await readManifest()).songs[req.params.id];
+    if (!song) {
+      res.status(404).json({ error: "Song not found" });
+      return;
+    }
+    res.json(song);
+  } catch (err) {
+    req.log.error({ err }, "Failed to read song");
+    res.status(500).json({ error: "Failed to read song" });
+  }
+});
+
 router.get("/songs/:id/download", async (req, res) => {
   try {
     const manifest = await readManifest();

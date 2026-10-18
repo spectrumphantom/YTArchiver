@@ -15,10 +15,12 @@ import {
   useStopDownloads,
   usePauseDownloads,
   useStartSongDownload,
-  downloadSong,
-  getDownloadAllSongsUrl,
+  getSongs,
+  getSong,
   type GetSongsSort,
 } from "@workspace/api-client-react";
+import { useDeviceDownloads, saveAudioFile } from "@/hooks/use-device-downloads";
+import { collectPlaylist } from "@/lib/sequentialDownloads";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -58,11 +60,13 @@ export default function Home() {
   const [savingSongId, setSavingSongId] = useState<string | null>(null);
   const pendingSongTitle = useRef("");
   const wasRunning = useRef(false);
-  const saveAllWhenFinished = useRef(false);
+  const [startingAll, setStartingAll] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useUser();
   const { signOut } = useClerk();
+  const device = useDeviceDownloads(user?.id);
+  const unfinishedDeviceQueue = Boolean(device.queue && device.queue.cursor < device.queue.items.length);
 
   const { data: downloadStatus } = useGetDownloadStatus({
     query: {
@@ -104,17 +108,6 @@ export default function Home() {
   useEffect(() => {
     if (wasRunning.current && !jobRunning) {
       refreshSongs();
-      if (saveAllWhenFinished.current) {
-        saveAllWhenFinished.current = false;
-        if ((downloadStatus?.completed ?? 0) > 0 || (stats?.downloaded ?? 0) > 0) {
-          window.location.assign(getDownloadAllSongsUrl());
-          if (downloadStatus?.failed) {
-            toast({ title: "Some Songs Could Not Be Downloaded", description: `Saving completed tracks. ${downloadStatus.failed} failed tracks can be retried individually.` });
-          }
-        } else {
-          toast({ title: "No Songs Downloaded", description: "YouTube could not provide these tracks. Retry individual songs for another attempt.", variant: "destructive" });
-        }
-      }
     }
     wasRunning.current = jobRunning;
   }, [jobRunning, downloadStatus, stats, queryClient]);
@@ -122,15 +115,7 @@ export default function Home() {
   const saveSong = async (id: string, title: string) => {
     setSavingSongId(id);
     try {
-      const blob = await downloadSong(id);
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = `${title.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_") || id}.mp3`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      await saveAudioFile(id, title);
     } catch (err) {
       toast({ title: "Download Failed", description: err instanceof Error ? err.message : "Unable to save this song.", variant: "destructive" });
     } finally {
@@ -141,11 +126,13 @@ export default function Home() {
   useEffect(() => {
     if (!pendingSongId || jobRunning || !downloadStatus) return;
     setPendingSongId(null);
-    if (downloadStatus.completed > 0 && downloadStatus.failed === 0) {
-      void saveSong(pendingSongId, pendingSongTitle.current);
-    } else {
-      toast({ title: "Download Not Completed", description: "The download stopped or YouTube could not provide this track. You can retry it.", variant: "destructive" });
-    }
+    void getSong(pendingSongId).then((song) => {
+      if (song.status === "done") {
+        void saveSong(song.id, song.title);
+        return;
+      }
+      toast({ title: "Download Not Completed", description: song.errorReason || "The download stopped. You can retry it.", variant: "destructive" });
+    }).catch((err) => toast({ title: "Unable to Check Song", description: err.message, variant: "destructive" }));
   }, [downloadStatus, jobRunning, pendingSongId]);
 
   // Mutations
@@ -174,12 +161,11 @@ export default function Home() {
     mutation: {
       onSuccess: (data) => {
         queryClient.setQueryData(getGetDownloadStatusQueryKey(), data);
-        toast({ title: "Downloads Started", description: "Downloading the current playlist one track at a time. A ZIP of the MP3s will save when finished." });
+        toast({ title: "Downloads Started", description: "MP3s save individually, three seconds apart, across every page. Allow multiple downloads when your browser asks." });
         queryClient.invalidateQueries({ queryKey: getGetDownloadStatusQueryKey() });
         refreshSongs();
       },
       onError: (err) => {
-        saveAllWhenFinished.current = false;
         toast({ title: "Downloads Failed", description: err.message, variant: "destructive" });
       },
     },
@@ -225,20 +211,33 @@ export default function Home() {
     scrapePlaylist.mutate({ data: { url: url.trim() } });
   };
 
-  const handleStart = () => {
-    if (stats && stats.total > 0 && stats.downloaded === stats.total) {
-      window.location.assign(getDownloadAllSongsUrl());
-    } else {
-      saveAllWhenFinished.current = true;
-      startDownloads.mutate();
+  const handleStart = async () => {
+    if (startingAll) return;
+    setStartingAll(true);
+    try {
+      if (unfinishedDeviceQueue) {
+        if (!jobRunning) await startDownloads.mutateAsync();
+        device.resume();
+      } else {
+        const items = await collectPlaylist((page) => getSongs({ page, pageSize: 200, sort: "added" }));
+        if (!items.length) throw new Error("This playlist has no songs to download.");
+        // Persist the snapshot before starting server work, including off-screen pages.
+        const queue = device.begin(items, false);
+        if (!jobRunning) await startDownloads.mutateAsync();
+        device.activate(queue);
+      }
+    } catch (err) {
+      toast({ title: "Unable to Start Download All", description: err instanceof Error ? err.message : "Try again.", variant: "destructive" });
+    } finally {
+      setStartingAll(false);
     }
   };
   const handleStop = () => {
-    saveAllWhenFinished.current = false;
+    device.clear();
     stopDownloads.mutate();
   };
   const handlePause = () => {
-    saveAllWhenFinished.current = false;
+    device.pause();
     pauseDownloads.mutate();
   };
   const handleSortChange = (value: string) => {
@@ -246,7 +245,7 @@ export default function Home() {
     setPage(1);
   };
 
-  const isDownloading = downloadStatus?.running || false;
+  const isDownloading = jobRunning || Boolean(device.queue?.active);
   const jobState = downloadStatus?.state ?? "idle";
 
   // Render Status Badge
@@ -329,12 +328,12 @@ export default function Home() {
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           className="min-w-0 h-11 font-mono bg-card border-card-border"
-          disabled={scrapePlaylist.isPending || jobRunning}
+          disabled={scrapePlaylist.isPending || jobRunning || unfinishedDeviceQueue || startingAll}
           data-testid="input-playlist-url"
         />
         <Button
           type="submit"
-          disabled={scrapePlaylist.isPending || jobRunning || !url.trim()}
+          disabled={scrapePlaylist.isPending || jobRunning || unfinishedDeviceQueue || startingAll || !url.trim()}
           className="h-11 font-mono sm:min-w-[120px]"
           data-testid="button-scrape"
         >
@@ -348,9 +347,9 @@ export default function Home() {
           )}
         </Button>
       </form>
-      {jobRunning && (
+      {(jobRunning || unfinishedDeviceQueue) && (
         <p className="text-xs font-mono text-muted-foreground">
-          Pause or stop downloads before switching playlists.
+          Stop the current downloads before switching playlists.
         </p>
       )}
       {scrapePlaylist.isPending && (
@@ -398,12 +397,12 @@ export default function Home() {
           {!isDownloading ? (
             <Button
               onClick={handleStart}
-              disabled={startDownloads.isPending || scrapePlaylist.isPending || !stats?.total}
+              disabled={startingAll || startDownloads.isPending || scrapePlaylist.isPending || !stats?.total}
               className="w-full font-mono bg-primary text-primary-foreground hover:bg-primary/90"
               data-testid="button-start-dl"
             >
               <Play className="w-4 h-4 mr-2" />
-              {jobState === "paused" ? "RESUME DOWNLOADS" : "DOWNLOAD ALL"}
+              {startingAll ? "STARTING..." : unfinishedDeviceQueue || jobState === "paused" ? "RESUME DOWNLOADS" : "DOWNLOAD ALL"}
             </Button>
           ) : (
             <div className="flex gap-2">
@@ -431,12 +430,27 @@ export default function Home() {
               &gt; {downloadStatus?.currentSong || "WAITING..."}
             </div>
           )}
-          {!isDownloading && jobState === "paused" && (
+          {!isDownloading && (jobState === "paused" || unfinishedDeviceQueue) && (
             <div className="text-[10px] font-mono text-yellow-400 mt-2 truncate">
               &gt; PAUSED
             </div>
           )}
+          {!isDownloading && (unfinishedDeviceQueue || jobState === "paused") && (
+            <Button variant="outline" className="font-mono" onClick={handleStop}>STOP / CLEAR QUEUE</Button>
+          )}
         </Card>
+      </div>
+
+      <div className="space-y-2 text-xs font-mono text-muted-foreground" role="status">
+        <p>Download All saves separate MP3 files, 3 seconds apart, across all playlist pages. Allow multiple downloads in your browser. Keep this tab open for device saves; saved progress resumes when you return on this browser.</p>
+        {device.queue && (
+          <p data-testid="device-download-progress">
+            DEVICE QUEUE: {device.queue.cursor}/{device.queue.items.length} processed
+            {" // "}{device.queue.failed} failed
+            {device.queue.active ? ` // NEXT: ${device.queue.items[device.queue.cursor]?.title ?? "Finished"}` : device.queue.cursor === device.queue.items.length ? " // FINISHED" : " // PAUSED"}
+          </p>
+        )}
+        {device.error && <p className="text-red-400 break-words">{device.error}</p>}
       </div>
 
       {/* Data Table */}
@@ -444,17 +458,6 @@ export default function Home() {
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between border-b border-border px-3 sm:px-4 py-3">
           <span className="text-xs font-mono text-muted-foreground">CURRENT PLAYLIST</span>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-11 sm:h-8 font-mono text-xs"
-              disabled={!stats?.downloaded}
-              onClick={() => window.location.assign(getDownloadAllSongsUrl())}
-              title="Save all completed playlist songs together in a ZIP file"
-              data-testid="button-save-all"
-            >
-              <Download className="w-3 h-3 mr-1" /> SAVE ZIP ({stats?.downloaded || 0})
-            </Button>
             <ArrowUpDown className="hidden sm:block w-3 h-3 shrink-0 text-muted-foreground" />
             <Select value={sort} onValueChange={handleSortChange}>
               <SelectTrigger className="h-11 sm:h-8 min-w-0 w-full sm:w-[180px] font-mono text-xs" data-testid="select-sort">
@@ -518,6 +521,12 @@ export default function Home() {
                     <span className="mt-1 block text-xs font-normal text-muted-foreground sm:hidden">
                       {song.channel} · {formatDuration(song.duration)}
                     </span>
+                    {song.status === "error" && (
+                      <details className="mt-2 whitespace-normal break-words text-xs font-normal text-red-400">
+                        <summary className="cursor-pointer">{song.errorReason || "Download failed — show details"}</summary>
+                        <p className="mt-1">{song.errorDetails || "No diagnostic was saved for this earlier failure. Retry this song to capture the reason."}</p>
+                      </details>
+                    )}
                   </TableCell>
                   <TableCell className="song-channel text-muted-foreground text-sm max-w-[150px] truncate">
                     {song.channel}
@@ -533,7 +542,7 @@ export default function Home() {
                       variant="outline"
                       size="sm"
                       className="h-11 sm:h-8 font-mono text-xs text-primary"
-                      disabled={savingSongId === song.id || pendingSongId === song.id || (song.status !== "done" && (jobRunning || startSongDownload.isPending))}
+                      disabled={Boolean(device.queue?.active) || savingSongId === song.id || pendingSongId === song.id || (song.status !== "done" && (jobRunning || startSongDownload.isPending))}
                       onClick={() => {
                         if (song.status === "done") void saveSong(song.id, song.title);
                         else {

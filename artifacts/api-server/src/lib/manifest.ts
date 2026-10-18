@@ -11,6 +11,16 @@ export interface Song {
   bucketPath: string | null;
   addedAt: string;
   downloadedAt: string | null;
+  errorReason?: string | null;
+  errorDetails?: string | null;
+}
+
+export interface SavedDownloadJob {
+  id: string;
+  state: "running" | "paused" | "stopped" | "completed";
+  remainingIds: string[];
+  completed: number;
+  failed: number;
 }
 
 export interface Manifest {
@@ -18,6 +28,7 @@ export interface Manifest {
   playlistTitle: string;
   playlistSongIds?: string[];
   playlistUrl?: string;
+  downloadJob?: SavedDownloadJob;
   lastUpdated: string;
 }
 

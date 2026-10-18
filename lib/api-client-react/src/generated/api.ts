@@ -27,6 +27,7 @@ import type {
   HealthStatus,
   PlaylistScrapeInput,
   ScrapeResult,
+  Song,
   SongPage,
   SongStats
 } from './api.schemas';
@@ -513,6 +514,77 @@ export function useGetSongStats<TData = Awaited<ReturnType<typeof getSongStats>>
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetSongStatsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSongUrl = (id: string,) => {
+
+
+
+
+  return `/api/songs/${id}`
+}
+
+export const getSong = async (id: string, options?: RequestInit): Promise<Song> => {
+
+  return customFetch<Song>(getGetSongUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSongQueryKey = (id: string,) => {
+    return [
+    `/api/songs/${id}`
+    ] as const;
+    }
+
+
+export const getGetSongQueryOptions = <TData = Awaited<ReturnType<typeof getSong>>, TError = ErrorType<ErrorResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSong>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSongQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSong>>> = ({ signal }) => getSong(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSong>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSongQueryResult = NonNullable<Awaited<ReturnType<typeof getSong>>>
+export type GetSongQueryError = ErrorType<ErrorResponse>
+
+
+
+export function useGetSong<TData = Awaited<ReturnType<typeof getSong>>, TError = ErrorType<ErrorResponse>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSong>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSongQueryOptions(id,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

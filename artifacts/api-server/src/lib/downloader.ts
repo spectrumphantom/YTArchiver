@@ -5,6 +5,9 @@ import { objectStorageClient } from "./objectStorage";
 import { readManifest, mutateManifest, updateSong, getPlaylistSongs, type Song } from "./manifest";
 import { runYtDlp } from "./ytdlp";
 import { logger } from "./logger";
+import { randomUUID } from "node:crypto";
+import { describeDownloadError } from "./downloadErrors";
+import type { SavedDownloadJob } from "./manifest";
 
 const AUDIO_PREFIX = "playlist-downloader/audio";
 
@@ -47,15 +50,24 @@ export function getJobStatus(): DownloadJobStatus {
   return { ...jobStatus };
 }
 
-export function requestStop(): void {
-  if (!jobStatus.running) return;
+export async function requestStop(): Promise<void> {
   stopRequested = true;
   currentAbort?.abort();
+  await mutateManifest((manifest) => {
+    if (manifest.downloadJob) manifest.downloadJob.state = "stopped";
+  });
+  if (!jobStatus.running) {
+    jobStatus.state = "idle";
+    jobStatus.pending = 0;
+  }
 }
 
-export function requestPause(): void {
+export async function requestPause(): Promise<void> {
   if (!jobStatus.running) return;
   pauseRequested = true;
+  await mutateManifest((manifest) => {
+    if (manifest.downloadJob) manifest.downloadJob.state = "paused";
+  });
 }
 
 function getBucketId(): string {
@@ -165,7 +177,7 @@ function isAbortError(err: unknown): boolean {
 async function downloadSingleSong(song: Song, signal?: AbortSignal): Promise<void> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "yt-"));
   try {
-    await updateSong(song.id, { status: "downloading" });
+    await updateSong(song.id, { status: "downloading", errorReason: null, errorDetails: null });
 
     await runYtDlp(
       [
@@ -216,7 +228,7 @@ async function downloadSingleSong(song: Song, signal?: AbortSignal): Promise<voi
       await updateSong(song.id, { status: "pending" });
     } else {
       logger.error({ err, id: song.id }, "Failed to download song");
-      await updateSong(song.id, { status: "error" });
+      await updateSong(song.id, { status: "error", ...describeDownloadError(err) });
     }
     throw err;
   } finally {
@@ -224,16 +236,39 @@ async function downloadSingleSong(song: Song, signal?: AbortSignal): Promise<voi
   }
 }
 
-export async function startDownloadJob(songIds?: string[]): Promise<void> {
-  if (jobStatus.running) throw new Error("A download is already running. Pause or stop it before starting another.");
+let starting = false;
 
-  const manifest = await readManifest();
-  const songs = songIds
-    ? songIds.map((id) => manifest.songs[id]).filter((song): song is Song => Boolean(song))
-    : getPlaylistSongs(manifest);
-  const pending = songs.filter((song) => song.status !== "done");
-  if (jobStatus.running) throw new Error("A download is already running.");
-
+export async function startDownloadJob(songIds?: string[], restore = false): Promise<void> {
+  if (jobStatus.running || starting) throw new Error("A download is already running. Pause or stop it before starting another.");
+  starting = true;
+  let saved: SavedDownloadJob;
+  let pending: Song[];
+  try {
+    const { result } = await mutateManifest((manifest) => {
+      const previous = manifest.downloadJob;
+      const resume = !songIds && previous && (restore || previous.state === "paused");
+      const ids = songIds ?? (resume ? previous.remainingIds : getPlaylistSongs(manifest).map((song) => song.id));
+      const songs = [...new Set(ids)].map((id) => manifest.songs[id]).filter((song): song is Song => Boolean(song) && song.status !== "done");
+      for (const song of songs) {
+        song.status = "pending";
+        song.errorReason = null;
+        song.errorDetails = null;
+      }
+      const job: SavedDownloadJob = {
+        id: resume ? previous.id : randomUUID(),
+        state: "running",
+        remainingIds: songs.map((song) => song.id),
+        completed: resume ? previous.completed : 0,
+        failed: resume ? previous.failed : 0,
+      };
+      manifest.downloadJob = job;
+      return { job, songs };
+    });
+    saved = result.job;
+    pending = result.songs;
+  } finally {
+    starting = false;
+  }
   stopRequested = false;
   pauseRequested = false;
   jobStatus = {
@@ -241,8 +276,8 @@ export async function startDownloadJob(songIds?: string[]): Promise<void> {
     state: "running",
     currentSong: null,
     pending: pending.length,
-    completed: 0,
-    failed: 0,
+    completed: saved.completed,
+    failed: saved.failed,
   };
 
   (async () => {
@@ -259,15 +294,48 @@ export async function startDownloadJob(songIds?: string[]): Promise<void> {
         } finally {
           currentAbort = null;
         }
-        jobStatus.pending = Math.max(0, jobStatus.pending - 1);
+        // An aborted song remains queued; a crash after upload is skipped on recovery.
+        await mutateManifest((manifest) => {
+          const job = manifest.downloadJob;
+          if (!job || job.id !== saved.id) throw new Error("Download checkpoint changed unexpectedly");
+          if (manifest.songs[song.id]?.status !== "pending") {
+            job.remainingIds = job.remainingIds.filter((id) => id !== song.id);
+          }
+          job.completed = jobStatus.completed;
+          job.failed = jobStatus.failed;
+          jobStatus.pending = job.remainingIds.length;
+        });
       }
     } catch (err) {
       logger.error({ err }, "Download job failed");
+      pauseRequested = true;
     } finally {
+      try {
+        await mutateManifest((manifest) => {
+          const job = manifest.downloadJob;
+          if (!job || job.id !== saved.id) return;
+          job.state = stopRequested ? "stopped" : pauseRequested || job.remainingIds.length ? "paused" : "completed";
+        });
+      } catch (err) {
+        logger.error({ err }, "Could not checkpoint download job");
+        pauseRequested = true;
+      }
       jobStatus.running = false;
       jobStatus.state = pauseRequested && !stopRequested ? "paused" : "idle";
       jobStatus.currentSong = null;
       currentAbort = null;
     }
   })();
+}
+
+export async function recoverDownloadJob(): Promise<void> {
+  const manifest = await readManifest();
+  const saved = manifest.downloadJob;
+  if (!saved) return;
+  if (saved.state === "running") {
+    logger.info({ remaining: saved.remainingIds.length }, "Resuming interrupted download job");
+    await startDownloadJob(undefined, true);
+  } else if (saved.state === "paused") {
+    jobStatus = { running: false, state: "paused", currentSong: null, pending: saved.remainingIds.length, completed: saved.completed, failed: saved.failed };
+  }
 }

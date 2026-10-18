@@ -37,6 +37,8 @@ export const ScrapePlaylistResponse = zod.object({
   "duration": zod.number().describe('Duration in seconds'),
   "thumbnailUrl": zod.string().nullish(),
   "status": zod.enum(['pending', 'downloading', 'done', 'error']),
+  "errorReason": zod.string().nullish().describe('User-readable explanation of a failed preparation'),
+  "errorDetails": zod.string().nullish().describe('Relevant diagnostic reported by YouTube or the downloader'),
   "bucketPath": zod.string().nullish().describe('Path in bucket if downloaded'),
   "addedAt": zod.string().describe('ISO timestamp when song was added'),
   "downloadedAt": zod.string().nullish().describe('ISO timestamp when download completed')
@@ -69,6 +71,8 @@ export const GetSongsResponse = zod.object({
   "duration": zod.number().describe('Duration in seconds'),
   "thumbnailUrl": zod.string().nullish(),
   "status": zod.enum(['pending', 'downloading', 'done', 'error']),
+  "errorReason": zod.string().nullish().describe('User-readable explanation of a failed preparation'),
+  "errorDetails": zod.string().nullish().describe('Relevant diagnostic reported by YouTube or the downloader'),
   "bucketPath": zod.string().nullish().describe('Path in bucket if downloaded'),
   "addedAt": zod.string().describe('ISO timestamp when song was added'),
   "downloadedAt": zod.string().nullish().describe('ISO timestamp when download completed')
@@ -106,6 +110,25 @@ export const GetSongStatsResponse = zod.object({
   "pending": zod.number(),
   "downloading": zod.number(),
   "error": zod.number()
+})
+
+
+export const GetSongParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GetSongResponse = zod.object({
+  "id": zod.string().describe('YouTube video ID'),
+  "title": zod.string(),
+  "channel": zod.string(),
+  "duration": zod.number().describe('Duration in seconds'),
+  "thumbnailUrl": zod.string().nullish(),
+  "status": zod.enum(['pending', 'downloading', 'done', 'error']),
+  "errorReason": zod.string().nullish().describe('User-readable explanation of a failed preparation'),
+  "errorDetails": zod.string().nullish().describe('Relevant diagnostic reported by YouTube or the downloader'),
+  "bucketPath": zod.string().nullish().describe('Path in bucket if downloaded'),
+  "addedAt": zod.string().describe('ISO timestamp when song was added'),
+  "downloadedAt": zod.string().nullish().describe('ISO timestamp when download completed')
 })
 
 

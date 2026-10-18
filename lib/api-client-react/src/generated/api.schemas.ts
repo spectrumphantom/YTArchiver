@@ -35,6 +35,16 @@ export interface Song {
   thumbnailUrl?: string | null;
   status: SongStatus;
   /**
+     * User-readable explanation of a failed preparation
+     * @nullable
+     */
+  errorReason?: string | null;
+  /**
+     * Relevant diagnostic reported by YouTube or the downloader
+     * @nullable
+     */
+  errorDetails?: string | null;
+  /**
      * Path in bucket if downloaded
      * @nullable
      */

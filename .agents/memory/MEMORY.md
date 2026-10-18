@@ -1,2 +1,2 @@
 - [Environment quirks](env-quirks.md) — no Python (use standalone yt-dlp binary); bucket access needs sidecar auth, not default GCS creds; JSON-in-bucket state needs generation CAS.
-- [Playlist behavior](playlist-behavior.md) — submitting a URL shows that playlist; Download All processes every track sequentially, across pages.
+- [Playlist behavior](playlist-behavior.md) — latest playlist; separate files 3 seconds apart across all pages; restart recovery and visible YouTube rejection reasons.

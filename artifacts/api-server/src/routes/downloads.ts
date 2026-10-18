@@ -42,14 +42,24 @@ router.get("/downloads/status", (_req, res) => {
   res.json(getJobStatus());
 });
 
-router.post("/downloads/pause", (_req, res) => {
-  requestPause();
-  res.json(getJobStatus());
+router.post("/downloads/pause", async (req, res) => {
+  try {
+    await requestPause();
+    res.json(getJobStatus());
+  } catch (err) {
+    req.log.error({ err }, "Failed to persist pause");
+    res.status(500).json({ error: "Unable to save paused downloads" });
+  }
 });
 
-router.post("/downloads/stop", (_req, res) => {
-  requestStop();
-  res.json(getJobStatus());
+router.post("/downloads/stop", async (req, res) => {
+  try {
+    await requestStop();
+    res.json(getJobStatus());
+  } catch (err) {
+    req.log.error({ err }, "Failed to persist stop");
+    res.status(500).json({ error: "Unable to save stopped downloads" });
+  }
 });
 
 export default router;

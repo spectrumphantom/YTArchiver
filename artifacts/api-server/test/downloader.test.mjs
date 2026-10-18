@@ -81,9 +81,9 @@ const song = (id, status = "pending") => ({
   status, bucketPath: status === "done" ? `${id}.mp3` : null,
   addedAt: "2026-01-01T00:00:00Z", downloadedAt: null,
 });
-async function finishJob() {
+async function finishJob(worker = downloader) {
   for (let attempt = 0; attempt < 200; attempt++) {
-    if (!downloader.getJobStatus().running) return;
+    if (!worker.getJobStatus().running) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   assert.fail("Download queue did not finish");
@@ -136,9 +136,61 @@ test("a failed track does not stop the rest of the queue", async () => {
   await finishJob();
   assert.deepEqual(state.calls, ["a", "b"]);
   assert.equal(state.manifest.songs.a.status, "error");
+  assert.match(state.manifest.songs.a.errorDetails, /Fixture video unavailable/);
+  assert.match(state.manifest.songs.a.errorReason, /restricted or removed/);
   assert.equal(state.manifest.songs.b.status, "done");
   assert.equal(downloader.getJobStatus().failed, 1);
   state.failId = null;
+});
+
+test("a running queue restores after process restart, skipping already uploaded songs", async () => {
+  state.manifest = {
+    songs: { a: song("a", "done"), b: song("b", "downloading") },
+    playlistSongIds: ["a", "b"],
+    downloadJob: { id: "restart", state: "running", remainingIds: ["a", "b"], completed: 1, failed: 0 },
+  };
+  state.calls = [];
+  const restored = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}#restart`);
+  await restored.recoverDownloadJob();
+  await finishJob(restored);
+  assert.deepEqual(state.calls, ["b"]);
+  assert.equal(state.manifest.downloadJob.state, "completed");
+  assert.equal(state.manifest.songs.b.status, "done");
+});
+
+test("paused work stays paused after restart, resumes on request, and Stop persists even while paused", async () => {
+  state.manifest = {
+    songs: { a: song("a"), b: song("b") },
+    playlistSongIds: ["a", "b"],
+    downloadJob: { id: "paused", state: "paused", remainingIds: ["b"], completed: 0, failed: 0 },
+  };
+  state.calls = [];
+  await downloader.recoverDownloadJob();
+  assert.equal(downloader.getJobStatus().state, "paused");
+  assert.deepEqual(state.calls, []);
+  await downloader.startDownloadJob();
+  await finishJob();
+  assert.deepEqual(state.calls, ["b"]);
+  state.manifest.downloadJob.state = "paused";
+  state.manifest.downloadJob.remainingIds = ["a"];
+  await downloader.recoverDownloadJob();
+  await downloader.requestStop();
+  assert.equal(state.manifest.downloadJob.state, "stopped");
+  await downloader.recoverDownloadJob();
+  assert.equal(downloader.getJobStatus().state, "idle");
+});
+
+test("server processes tracks beyond the first UI page and clears old failure details on retry", async () => {
+  const ids = Array.from({ length: 53 }, (_, i) => `track${i}`);
+  state.manifest = { songs: Object.fromEntries(ids.map((id) => [id, song(id)])), playlistSongIds: ids };
+  state.manifest.songs.track0.errorReason = "Old failure";
+  state.manifest.songs.track0.errorDetails = "Old diagnostic";
+  state.calls = [];
+  await downloader.startDownloadJob();
+  await finishJob();
+  assert.deepEqual(state.calls, ids);
+  assert.equal(state.manifest.songs.track0.errorReason, null);
+  assert.equal(state.manifest.songs.track0.errorDetails, null);
 });
 
 test("an empty/private playlist fails without replacing the previous playlist", async () => {
@@ -149,6 +201,11 @@ test("an empty/private playlist fails without replacing the previous playlist", 
 });
 
 test("Save ZIP includes completed current tracks only and individual downloads support Unicode titles", async () => {
+  state.manifest = {
+    songs: { a: song("a", "error"), b: song("b", "done"), c: song("c", "done"), old: song("old", "done") },
+    playlistSongIds: ["a", "b", "c"],
+  };
+  state.manifest.songs.b.bucketPath = "playlist-downloader/audio/b_[b].mp3";
   const bundled = await build({
     entryPoints: ["src/routes/songs.ts"],
     absWorkingDir: new URL("..", import.meta.url).pathname,

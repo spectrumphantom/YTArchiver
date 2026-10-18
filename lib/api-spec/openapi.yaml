@@ -162,6 +162,28 @@ paths:
               schema:
                 $ref: "#/components/schemas/SongStats"
 
+  /songs/{id}:
+    get:
+      operationId: getSong
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Song preparation status and any rejection reason
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Song"
+        "404":
+          description: Song not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /downloads/start:
     post:
       operationId: startDownloads
@@ -308,6 +330,12 @@ components:
         status:
           type: string
           enum: [pending, downloading, done, error]
+        errorReason:
+          type: ["string", "null"]
+          description: User-readable explanation of a failed preparation
+        errorDetails:
+          type: ["string", "null"]
+          description: Relevant diagnostic reported by YouTube or the downloader
         bucketPath:
           type: ["string", "null"]
           description: Path in bucket if downloaded
