@@ -82,38 +82,63 @@ export async function runYtDlp(
   signal?: AbortSignal
 ): Promise<YtDlpResult> {
   const binary = await ensureYtDlp();
-  return new Promise((resolve, reject) => {
-    const proc = spawn(binary, args, {
-      env: { ...process.env, PATH: process.env.PATH ?? "" },
-      signal,
-    });
-
-    let stdout = "";
-    let stderr = "";
-    const timer = setTimeout(() => {
-      proc.kill("SIGKILL");
-      reject(new Error("yt-dlp timed out"));
-    }, timeoutMs);
-
-    proc.stdout.on("data", (d: Buffer) => {
-      stdout += d.toString();
-    });
-    proc.stderr.on("data", (d: Buffer) => {
-      stderr += d.toString();
-    });
-    proc.on("error", (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        reject(
-          new Error(`yt-dlp exited with code ${code}: ${stderr.slice(-800)}`)
-        );
+  let cookieDir: string | undefined;
+  try {
+    const cookieJar = process.env.YOUTUBE_COOKIES?.trim();
+    let ytDlpArgs = args;
+    if (cookieJar) {
+      const cookieRows = cookieJar
+        .split(/\r?\n/)
+        .filter((line) => line.trim() && !line.startsWith("#") && !line.startsWith("#HttpOnly_"));
+      const httpOnlyRows = cookieJar
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("#HttpOnly_"));
+      const dataRows = [...cookieRows, ...httpOnlyRows];
+      if (dataRows.length === 0 || dataRows.some((line) => line.split("\t").length !== 7)) {
+        throw new Error("YOUTUBE_COOKIES must contain a Netscape-format cookie jar.");
       }
+
+      cookieDir = await fs.mkdtemp(path.join(os.tmpdir(), "yt-dlp-cookies-"));
+      const cookiePath = path.join(cookieDir, "cookies.txt");
+      await fs.writeFile(cookiePath, cookieJar, { mode: 0o600 });
+      ytDlpArgs = ["--cookies", cookiePath, ...args];
+    }
+
+    return await new Promise((resolve, reject) => {
+      const proc = spawn(binary, ytDlpArgs, {
+        env: { ...process.env, PATH: process.env.PATH ?? "" },
+        signal,
+      });
+
+      let stdout = "";
+      let stderr = "";
+      const timer = setTimeout(() => {
+        proc.kill("SIGKILL");
+        reject(new Error("yt-dlp timed out"));
+      }, timeoutMs);
+
+      proc.stdout.on("data", (d: Buffer) => {
+        stdout += d.toString();
+      });
+      proc.stderr.on("data", (d: Buffer) => {
+        stderr += d.toString();
+      });
+      proc.on("error", (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+      proc.on("close", (code) => {
+        clearTimeout(timer);
+        if (code === 0) {
+          resolve({ stdout, stderr });
+        } else {
+          reject(
+            new Error(`yt-dlp exited with code ${code}: ${stderr.slice(-800)}`)
+          );
+        }
+      });
     });
-  });
+  } finally {
+    if (cookieDir) await fs.rm(cookieDir, { recursive: true, force: true });
+  }
 }
