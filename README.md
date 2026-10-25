@@ -8,6 +8,10 @@ https://sonivox.app
 
 # Instructions
 1.) Download this github repository
+
 2.) Install Replit:
 The first app you can publish is free.
-3.) Upload the .zip file you downloaded from this repository to replit
+
+3.) Upload the .zip file you downloaded from this repository to replit but before you click enter paste this prompt so that replit can set up YT Archiver for you.
+
+4.) Wait until the replit agent is finsihed before you publish.
